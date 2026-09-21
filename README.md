@@ -63,7 +63,7 @@ npm run deploy
 
 Включение (в Firebase Console):
 1. Build → Firestore Database → Create database → Production mode → Enable.
-2. Вкладка Rules → вставить ниже, заменив `OWNER@MAIL` на свой email → Publish.
+2. Вкладка Rules → вставить ниже → Publish (email владельца уже подставлен).
 3. В `src/utils/admin.js` вписать тот же email в `ADMIN_EMAILS`, запушить.
 
 ```
@@ -72,7 +72,7 @@ service cloud.firestore {
   match /databases/{db}/documents {
     match /users/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
-      allow read, write: if request.auth != null && request.auth.token.email == 'OWNER@MAIL';
+      allow read, write: if request.auth != null && request.auth.token.email == 'pirov.ru@yandex.ru';
     }
   }
 }
