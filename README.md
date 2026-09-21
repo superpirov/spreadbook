@@ -33,19 +33,19 @@ npm run deploy
 | Путь | Что |
 |---|---|
 | `/` | Презентационный лендинг |
-| `/login` | Вход по почте (сейчас — локальный режим) |
-| `/app` | Кабинет: дашборд (за гейтом `ProtectedRoute`) |
-| `/app/deals`, `/app/contacts`, `/app/settings` | Журнал, контрагенты, бэкап |
+| `/login` | Вход и регистрация по почте (Firebase Auth) |
+| `/app` | Кабинет: дашборд (за гейтом `ProtectedRoute` + пейволл подписки) |
+| `/app/deals`, `/app/contacts`, `/app/settings`, `/app/billing` | Журнал, контрагенты, бэкап, тариф и оплата |
 
-## Вход по почте: что нужно (AUTH_PLAN)
+## Вход по почте (Firebase) — ✅ подключено
 
-Статический сайт не может сам проверять пароли — нужен внешний auth-провайдер. Рекомендация: **Firebase Authentication** (бесплатный тариф, email+пароль и Google-вход, дружит с GitHub Pages).
+Вход работает через **Firebase Authentication** (проект `spreadbook-5452d`, провайдер Email/Password).
+Код: `src/utils/firebase.js` (конфиг), `src/store/useAuth.js` (`AUTH_MODE='firebase'`, login/register/reset + `onAuthStateChanged`), `src/pages/Login.jsx`, гейт `ProtectedRoute` ждёт восстановления сессии.
 
-1. Создать проект в [Firebase Console](https://console.firebase.google.com), включить Sign-in method → Email/Password (и опционально Google).
-2. Взять веб-конфиг (`apiKey`, `authDomain`, `projectId`...) — это публичные ключи, их можно коммитить.
-3. В коде: `npm i firebase`, в `src/store/useAuth.js` переключить `AUTH_MODE` на `'firebase'`, заменить `login/logout` на `signInWithEmailAndPassword / createUserWithEmailAndPassword / signOut`, в `Login.jsx` добавить регистрацию и сброс пароля. Роуты и `ProtectedRoute` менять не нужно.
-4. Альтернативы: Supabase Auth, Clerk, Auth0 — схема та же, меняется только `useAuth.js`.
-5. Данные сделок при этом остаются в `localStorage` (per-browser). Чтобы они ездили за пользователем между устройствами — следующий шаг: Firestore/Supabase вместо стора (отдельная задача).
+Чеклист в консоли (если что-то не работает):
+1. Build → Authentication → Sign-in method → **Email/Password включён**.
+2. Authentication → Settings → **Authorized domains** → добавлен `superpirov.github.io` (иначе вход с сайта отклоняется с `auth/unauthorized-domain`).
+3. Данные сделок по-прежнему в `localStorage` (per-browser). Синхронизация между устройствами — следующий шаг: Firestore.
 
 ## Оплата (BILLING)
 

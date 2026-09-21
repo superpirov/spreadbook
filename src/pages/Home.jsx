@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
-import { useAuth } from '../store/useAuth.js'
+import { useAuth, useCurrentSub } from '../store/useAuth.js'
 import { filterByPeriod } from '../utils/calculations.js'
 import { getAccessState } from '../utils/billing.js'
 import DashboardCards from '../components/DashboardCards.jsx'
@@ -13,7 +13,7 @@ export default function Home() {
   const period = useStore((s) => s.period)
   const setPeriod = useStore((s) => s.setPeriod)
   const user = useAuth((s) => s.user)
-  const sub = useAuth((s) => s.sub)
+  const sub = useCurrentSub()
   const access = getAccessState(sub)
 
   const scoped = useMemo(() => filterByPeriod(deals, period), [deals, period])

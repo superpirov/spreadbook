@@ -4,7 +4,7 @@ import Header from './components/Header.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 import Billing from './components/Billing.jsx'
-import { useAuth } from './store/useAuth.js'
+import { useCurrentSub } from './store/useAuth.js'
 import { getAccessState } from './utils/billing.js'
 import Landing from './pages/Landing.jsx'
 import Login from './pages/Login.jsx'
@@ -16,7 +16,7 @@ import BillingPage from './pages/BillingPage.jsx'
 
 // Public landing + login, cabinet (/app/*) behind auth gate + paywall.
 function CabinetLayout() {
-  const sub = useAuth((s) => s.sub)
+  const sub = useCurrentSub()
   const loc = useLocation()
   const locked = getAccessState(sub).status === 'expired' && !loc.pathname.endsWith('/billing')
 

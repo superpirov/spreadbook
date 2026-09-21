@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { Copy, Check, Crown, Clock, ExternalLink, Loader2, ShieldCheck } from 'lucide-react'
-import { useAuth } from '../store/useAuth.js'
+import { useAuth, useCurrentSub } from '../store/useAuth.js'
 import { BILLING, getAccessState, trialEndDate, verifyUsdtPayment, tronscanUrl } from '../utils/billing.js'
 import { formatDate } from '../utils/formatters.js'
 
 export function StatusBadge() {
-  const sub = useAuth((s) => s.sub)
+  const sub = useCurrentSub()
   const st = getAccessState(sub)
   if (st.status === 'pro')
     return (
@@ -28,7 +28,7 @@ export function StatusBadge() {
 
 // Full billing section: reused on the /app/billing page and inside the paywall.
 export default function Billing({ compact = false }) {
-  const sub = useAuth((s) => s.sub)
+  const sub = useCurrentSub()
   const activatePro = useAuth((s) => s.activatePro)
   const st = getAccessState(sub)
   const [tx, setTx] = useState(sub?.txHash || '')
