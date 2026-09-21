@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Star, User, UserPlus } from 'lucide-react'
+import { Star, User, UserPlus, Trash2, Wallet, CreditCard, Phone, Landmark } from 'lucide-react'
 import { useStore } from '../store/useStore.js'
 import { dealFiatTotal, dealNetValue } from '../utils/calculations.js'
 import { formatMoney, formatDateTime } from '../utils/formatters.js'
@@ -8,12 +8,45 @@ export default function CounterpartyList() {
   const deals = useStore((s) => s.deals)
   const ratings = useStore((s) => s.ratings)
   const knownCounterparties = useStore((s) => s.knownCounterparties)
+  const profiles = useStore((s) => s.profiles)
   const setRating = useStore((s) => s.setRating)
+  const setProfile = useStore((s) => s.setProfile)
   const addCounterparty = useStore((s) => s.addCounterparty)
+  const deleteCounterparty = useStore((s) => s.deleteCounterparty)
   const [selected, setSelected] = useState(null)
-  const [noteDraft, setNoteDraft] = useState('')
+  const [draft, setDraft] = useState({ note: '', wallets: '', cardNumber: '', phone: '', bank: '' })
   const [newName, setNewName] = useState('')
   const [addError, setAddError] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  const select = (name) => {
+    setSelected(name)
+    setSaved(false)
+    setDraft({
+      note: ratings[name]?.note || '',
+      wallets: profiles[name]?.wallets || '',
+      cardNumber: profiles[name]?.cardNumber || '',
+      phone: profiles[name]?.phone || '',
+      bank: profiles[name]?.bank || '',
+    })
+  }
+
+  const saveDraft = () => {
+    if (!selected) return
+    setRating(selected, ratings[selected]?.rating || 0, draft.note)
+    const { note, ...prof } = draft
+    setProfile(selected, prof)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const remove = () => {
+    if (!selected) return
+    const n = stats.find((s) => s.name === selected)?.deals.length || 0
+    if (!window.confirm(`Удалить контрагента «${selected}»?${n > 0 ? ` У него ${n} сделок — сами сделки останутся, но станут безымянными.` : ''} Рейтинг и реквизиты тоже удалятся.`)) return
+    deleteCounterparty(selected)
+    setSelected(null)
+  }
 
   const submitNew = (e) => {
     e.preventDefault()
@@ -25,8 +58,7 @@ export default function CounterpartyList() {
     const clean = newName.trim()
     setNewName('')
     setAddError('')
-    setSelected(clean)
-    setNoteDraft(ratings[clean]?.note || '')
+    select(clean)
   }
 
   const stats = useMemo(() => {
@@ -74,7 +106,7 @@ export default function CounterpartyList() {
             return (
               <button
                 key={s.name}
-                onClick={() => { setSelected(s.name); setNoteDraft(ratings[s.name]?.note || '') }}
+                onClick={() => select(s.name)}
                 className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${
                   selected === s.name ? 'bg-white/10 ring-1 ring-white/15' : 'hover:bg-white/5'
                 }`}
@@ -111,27 +143,89 @@ export default function CounterpartyList() {
                   Оборот {formatMoney(sel.volume)} · cash-flow {formatMoney(sel.net)} · сделок: {sel.deals.length}
                 </p>
               </div>
-              <Stars
-                value={ratings[sel.name]?.rating || 0}
-                onRate={(v) => setRating(sel.name, v, ratings[sel.name]?.note || '')}
-              />
+              <div className="flex items-center gap-2">
+                <Stars
+                  value={ratings[sel.name]?.rating || 0}
+                  onRate={(v) => setRating(sel.name, v, ratings[sel.name]?.note || draft.note)}
+                />
+                <button
+                  className="rounded-lg p-2 text-slate-500 hover:bg-red-500/20 hover:text-red-300"
+                  title="Удалить контрагента"
+                  onClick={remove}
+                >
+                  <Trash2 size={17} />
+                </button>
+              </div>
             </div>
-            <label className="label mt-4">Заметка о контрагенте</label>
-            <div className="flex gap-2">
-              <input
-                className="input"
-                placeholder="Надежность, скорость переводов…"
-                value={noteDraft}
-                onChange={(e) => setNoteDraft(e.target.value)}
-              />
-              <button
-                className="btn-ghost shrink-0"
-                onClick={() => setRating(sel.name, ratings[sel.name]?.rating || 0, noteDraft)}
-              >
-                Сохранить
+
+            <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <h4 className="mb-3 text-sm font-bold">Реквизиты и заметки</h4>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className="label flex items-center gap-1.5"><Wallet size={12} /> Адреса кошельков</label>
+                  <textarea
+                    rows={2}
+                    className="input resize-none font-mono text-xs"
+                    placeholder={'USDT TRC-20: TXXXX…\nBTC: bc1q…'}
+                    value={draft.wallets}
+                    onChange={(e) => setDraft((d) => ({ ...d, wallets: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="label flex items-center gap-1.5"><CreditCard size={12} /> Номер карты</label>
+                  <input
+                    inputMode="numeric"
+                    className="input font-mono text-sm"
+                    placeholder="0000 0000 0000 0000"
+                    value={draft.cardNumber}
+                    onChange={(e) => setDraft((d) => ({ ...d, cardNumber: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="label flex items-center gap-1.5"><Phone size={12} /> Номер телефона</label>
+                  <input
+                    type="tel"
+                    className="input"
+                    placeholder="+7 900 000-00-00"
+                    value={draft.phone}
+                    onChange={(e) => setDraft((d) => ({ ...d, phone: e.target.value }))}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="label flex items-center gap-1.5"><Landmark size={12} /> Банк</label>
+                  <input
+                    className="input"
+                    placeholder="Например: Сбер, Т-Банк, ВТБ…"
+                    value={draft.bank}
+                    onChange={(e) => setDraft((d) => ({ ...d, bank: e.target.value }))}
+                    list="bank-list"
+                  />
+                  <datalist id="bank-list">
+                    {['Сбер', 'Т-Банк', 'ВТБ', 'Альфа-Банк', 'Райффайзен', 'Газпромбанк', 'ОТП', 'ПриватБанк', 'Монобанк', 'Kaspi', 'Binance', 'Bybit', 'Наличные'].map((b) => (
+                      <option key={b} value={b} />
+                    ))}
+                  </datalist>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="label">Заметка о контрагенте</label>
+                  <input
+                    className="input"
+                    placeholder="Надежность, скорость переводов…"
+                    value={draft.note}
+                    onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <button className="btn-primary mt-3 w-full sm:w-auto" onClick={saveDraft}>
+                {saved ? 'Сохранено ✓' : 'Сохранить реквизиты'}
               </button>
             </div>
-            <div className="mt-4 max-h-[380px] space-y-2 overflow-y-auto">
+
+            <h4 className="mb-2 mt-4 text-sm font-bold">История сделок ({sel.deals.length})</h4>
+            <div className="max-h-[300px] space-y-2 overflow-y-auto">
+              {sel.deals.length === 0 && (
+                <p className="rounded-xl bg-white/[0.03] px-3 py-4 text-center text-xs text-slate-500">Сделок пока нет.</p>
+              )}
               {sel.deals.map((d) => (
                 <div key={d.id} className="flex items-center justify-between gap-2 rounded-xl bg-white/[0.04] px-3 py-2 text-sm">
                   <span className="text-slate-400">{formatDateTime(d.datetime)}</span>

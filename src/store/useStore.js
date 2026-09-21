@@ -13,6 +13,7 @@ export const useStore = create(
       isDemo: false,
       ratings: mockRatings,
       knownCounterparties: [],
+      profiles: {}, // { [name]: { wallets, cardNumber, phone, bank } }
       period: 'all',
       theme: 'dark',
 
@@ -35,19 +36,25 @@ export const useStore = create(
 
       clearDemo: () => set({ deals: [], isDemo: false }),
 
-      resetAll: () => set({ deals: [], ratings: {}, knownCounterparties: [], isDemo: false }),
+      resetAll: () => set({ deals: [], ratings: {}, knownCounterparties: [], profiles: {}, isDemo: false }),
 
       // Import replaces the whole DB (with user confirmation in UI).
       importData: (payload) => {
         const deals = Array.isArray(payload?.deals) ? payload.deals : []
         const ratings = payload?.ratings && typeof payload.ratings === 'object' ? payload.ratings : {}
         const known = Array.isArray(payload?.knownCounterparties) ? payload.knownCounterparties : []
-        set({ deals, ratings, knownCounterparties: known, isDemo: false })
+        const profiles = payload?.profiles && typeof payload.profiles === 'object' ? payload.profiles : {}
+        set({ deals, ratings, knownCounterparties: known, profiles, isDemo: false })
       },
 
       setRating: (name, rating, note = '') =>
         set((s) => ({
           ratings: { ...s.ratings, [name]: { rating, note } },
+        })),
+
+      setProfile: (name, patch) =>
+        set((s) => ({
+          profiles: { ...s.profiles, [name]: { wallets: '', cardNumber: '', phone: '', bank: '', ...(s.profiles[name] || {}), ...patch } },
         })),
 
       // Explicitly added counterparties (without deals yet).
@@ -67,6 +74,22 @@ export const useStore = create(
           knownCounterparties: s.knownCounterparties.filter((c) => c !== name),
         })),
 
+      // Full delete: removes from known list, drops rating/profile, and
+      // unlinks the name from existing deals (deals themselves are kept).
+      deleteCounterparty: (name) =>
+        set((s) => {
+          const ratings = { ...s.ratings }
+          delete ratings[name]
+          const profiles = { ...s.profiles }
+          delete profiles[name]
+          return {
+            knownCounterparties: s.knownCounterparties.filter((c) => c !== name),
+            ratings,
+            profiles,
+            deals: s.deals.map((d) => (d.counterparty === name ? { ...d, counterparty: '' } : d)),
+          }
+        }),
+
       counterparties: () => {
         const fromDeals = get().deals.map((d) => (d.counterparty || '').trim()).filter(Boolean)
         const names = new Set([...fromDeals, ...get().knownCounterparties])
@@ -81,6 +104,7 @@ export const useStore = create(
         deals: s.deals,
         ratings: s.ratings,
         knownCounterparties: s.knownCounterparties,
+        profiles: s.profiles,
         isDemo: s.isDemo,
         period: s.period,
       }),

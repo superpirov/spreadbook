@@ -13,6 +13,8 @@ function toCSV(deals) {
 export default function Settings() {
   const deals = useStore((s) => s.deals)
   const ratings = useStore((s) => s.ratings)
+  const knownCounterparties = useStore((s) => s.knownCounterparties)
+  const profiles = useStore((s) => s.profiles)
   const importData = useStore((s) => s.importData)
   const resetAll = useStore((s) => s.resetAll)
   const fileRef = useRef(null)
@@ -29,7 +31,7 @@ export default function Settings() {
   }
 
   const exportJSON = () => {
-    download(`spreadbook-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ app: 'SpreadBook', version: 1, exportedAt: new Date().toISOString(), deals, ratings }, null, 2), 'application/json')
+    download(`spreadbook-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ app: 'SpreadBook', version: 2, exportedAt: new Date().toISOString(), deals, ratings, knownCounterparties, profiles }, null, 2), 'application/json')
     setMsg('JSON-дамп скачан.')
   }
 
