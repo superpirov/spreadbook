@@ -1,6 +1,11 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from 'firebase/firestore'
 
 // Public web config (safe to commit: Firebase Auth is secured by
 // Authorized domains + provider settings, not by the apiKey).
@@ -17,4 +22,15 @@ const firebaseConfig = {
 
 export const firebaseApp = initializeApp(firebaseConfig)
 export const auth = getAuth(firebaseApp)
-export const db = getFirestore(firebaseApp)
+
+// Firestore with persistent offline cache: reads/writes work without
+// internet and sync automatically when the connection returns.
+let db
+try {
+  db = initializeFirestore(firebaseApp, {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+  })
+} catch {
+  db = getFirestore(firebaseApp)
+}
+export { db }

@@ -1,113 +1,418 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
-import { mockDeals, mockRatings } from '../utils/mockData.js'
+import {
+  collection,
+  doc,
+  setDoc,
+  deleteDoc,
+  onSnapshot,
+  writeBatch,
+} from 'firebase/firestore'
+import { db } from '../utils/firebase.js'
 
 const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+const enc = (name) => encodeURIComponent(name)
 
-// Single store: deals + counterparty ratings + UI prefs. Persisted to localStorage.
-// No backend — this is the entire "database" for GitHub Pages build.
-export const useStore = create(
-  persist(
-    (set, get) => ({
-      deals: mockDeals,
-      isDemo: false,
-      ratings: mockRatings,
-      knownCounterparties: [],
-      profiles: {}, // { [name]: { wallets, cardNumber, phone, bank } }
-      period: 'all',
-      theme: 'dark',
+// Firestore layout (per Firebase user):
+//   users/{uid}                 -> { knownCounterparties[], period, ...profile/sub fields }
+//   users/{uid}/deals/{dealId}  -> deal object (doc id == deal.id)
+//   users/{uid}/contacts/{enc}  -> { name, rating, note, wallets, cardNumber, phone, bank }
+// localStorage keeps a per-user instant cache + offline fallback.
+// Writes are optimistic-local first, then Firestore (snapshot echoes confirm).
 
-      setPeriod: (period) => set({ period }),
+const dealsCol = (owner) => collection(db, 'users', owner, 'deals')
+const dealDoc = (owner, id) => doc(db, 'users', owner, 'deals', id)
+const contactsCol = (owner) => collection(db, 'users', owner, 'contacts')
+const contactDoc = (owner, name) => doc(db, 'users', owner, 'contacts', enc(name))
+const userDoc = (owner) => doc(db, 'users', owner)
 
-      addDeal: (deal) =>
-        set((s) => ({
-          deals: [{ ...deal, id: deal.id || uid() }, ...s.deals],
-        })),
+const cacheKey = (owner) => `spreadbook-cache-v1-${owner}`
 
-      updateDeal: (id, patch) =>
-        set((s) => ({
-          deals: s.deals.map((d) => (d.id === id ? { ...d, ...patch } : d)),
-        })),
+function loadCache(owner) {
+  try {
+    const raw = localStorage.getItem(cacheKey(owner))
+    if (!raw) return null
+    const d = JSON.parse(raw)
+    if (!d || typeof d !== 'object') return null
+    return {
+      deals: Array.isArray(d.deals) ? d.deals : [],
+      ratings: d.ratings && typeof d.ratings === 'object' ? d.ratings : {},
+      profiles: d.profiles && typeof d.profiles === 'object' ? d.profiles : {},
+      knownCounterparties: Array.isArray(d.knownCounterparties) ? d.knownCounterparties : [],
+      period: d.period || 'all',
+    }
+  } catch {
+    return null
+  }
+}
 
-      deleteDeal: (id) =>
-        set((s) => ({
-          deals: s.deals.filter((d) => d.id !== id),
-        })),
+function readLegacyLocal() {
+  // Pre-cloud database (spreadbook-storage-v2), migrated once to the cloud.
+  try {
+    const raw = localStorage.getItem('spreadbook-storage-v2')
+    const d = JSON.parse(raw)?.state
+    if (!d) return null
+    return {
+      deals: Array.isArray(d.deals) ? d.deals : [],
+      ratings: d.ratings && typeof d.ratings === 'object' ? d.ratings : {},
+      profiles: d.profiles && typeof d.profiles === 'object' ? d.profiles : {},
+      knownCounterparties: Array.isArray(d.knownCounterparties) ? d.knownCounterparties : [],
+    }
+  } catch {
+    return null
+  }
+}
 
-      clearDemo: () => set({ deals: [], isDemo: false }),
+let boundUid = null
+let unsubs = []
+let migratedThisSession = false
 
-      resetAll: () => set({ deals: [], ratings: {}, knownCounterparties: [], profiles: {}, isDemo: false }),
+export const useStore = create((set, get) => ({
+  deals: [],
+  isDemo: false,
+  ratings: {},
+  profiles: {},
+  knownCounterparties: [],
+  period: 'all',
+  theme: 'dark',
+  cloudReady: false, // first snapshot received
+  cloudError: null,
 
-      // Import replaces the whole DB (with user confirmation in UI).
-      importData: (payload) => {
-        const deals = Array.isArray(payload?.deals) ? payload.deals : []
-        const ratings = payload?.ratings && typeof payload.ratings === 'object' ? payload.ratings : {}
-        const known = Array.isArray(payload?.knownCounterparties) ? payload.knownCounterparties : []
-        const profiles = payload?.profiles && typeof payload.profiles === 'object' ? payload.profiles : {}
-        set({ deals, ratings, knownCounterparties: known, profiles, isDemo: false })
-      },
+  owner: () => boundUid,
 
-      setRating: (name, rating, note = '') =>
-        set((s) => ({
-          ratings: { ...s.ratings, [name]: { rating, note } },
-        })),
-
-      setProfile: (name, patch) =>
-        set((s) => ({
-          profiles: { ...s.profiles, [name]: { wallets: '', cardNumber: '', phone: '', bank: '', ...(s.profiles[name] || {}), ...patch } },
-        })),
-
-      // Explicitly added counterparties (without deals yet).
-      addCounterparty: (name) => {
-        const clean = String(name || '').trim()
-        if (!clean) return false
-        const exists = get()
-          .counterparties()
-          .some((c) => c.toLowerCase() === clean.toLowerCase())
-        if (exists) return false
-        set((s) => ({ knownCounterparties: [...s.knownCounterparties, clean] }))
-        return true
-      },
-
-      removeCounterparty: (name) =>
-        set((s) => ({
-          knownCounterparties: s.knownCounterparties.filter((c) => c !== name),
-        })),
-
-      // Full delete: removes from known list, drops rating/profile, and
-      // unlinks the name from existing deals (deals themselves are kept).
-      deleteCounterparty: (name) =>
-        set((s) => {
-          const ratings = { ...s.ratings }
-          delete ratings[name]
-          const profiles = { ...s.profiles }
-          delete profiles[name]
-          return {
-            knownCounterparties: s.knownCounterparties.filter((c) => c !== name),
-            ratings,
-            profiles,
-            deals: s.deals.map((d) => (d.counterparty === name ? { ...d, counterparty: '' } : d)),
-          }
+  saveCache: () => {
+    if (!boundUid) return
+    const s = get()
+    try {
+      localStorage.setItem(
+        cacheKey(boundUid),
+        JSON.stringify({
+          deals: s.deals,
+          ratings: s.ratings,
+          profiles: s.profiles,
+          knownCounterparties: s.knownCounterparties,
+          period: s.period,
         }),
+      )
+    } catch {
+      /* storage full/blocked — cloud remains source of truth */
+    }
+  },
 
-      counterparties: () => {
-        const fromDeals = get().deals.map((d) => (d.counterparty || '').trim()).filter(Boolean)
-        const names = new Set([...fromDeals, ...get().knownCounterparties])
-        return [...names].sort((a, b) => a.localeCompare(b, 'ru'))
+  // Attach realtime listeners for a Firebase user. Idempotent per uid.
+  bindUser: (owner) => {
+    if (!owner || boundUid === owner) return
+    get().unbindUser()
+    boundUid = owner
+    migratedThisSession = false
+
+    const cached = loadCache(owner)
+    set({
+      deals: cached?.deals || [],
+      ratings: cached?.ratings || {},
+      profiles: cached?.profiles || {},
+      knownCounterparties: cached?.knownCounterparties || [],
+      period: cached?.period || 'all',
+      cloudReady: false,
+      cloudError: null,
+    })
+
+    const onErr = (label) => (e) => {
+      console.warn(`[spreadbook] ${label} snapshot failed`, e?.code || e)
+      set({ cloudError: 'Нет связи с облаком — показаны локальные данные.' })
+    }
+
+    const un1 = onSnapshot(
+      dealsCol(owner),
+      (snap) => {
+        const deals = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => new Date(b.datetime) - new Date(a.datetime))
+        set({ deals, cloudReady: true, cloudError: null })
+        get().saveCache()
+        get().maybeMigrate()
       },
-    }),
-    {
-      // v2: demo seed removed + knownCounterparties added. Old v1 persisted
-      // demo data is intentionally dropped by the key change.
-      name: 'spreadbook-storage-v2',
-      partialize: (s) => ({
-        deals: s.deals,
-        ratings: s.ratings,
-        knownCounterparties: s.knownCounterparties,
-        profiles: s.profiles,
-        isDemo: s.isDemo,
-        period: s.period,
-      }),
-    },
-  ),
-)
+      onErr('deals'),
+    )
+
+    const un2 = onSnapshot(
+      contactsCol(owner),
+      (snap) => {
+        const ratings = {}
+        const profiles = {}
+        for (const d of snap.docs) {
+          const c = d.data()
+          if (!c?.name) continue
+          if (c.rating || c.note) ratings[c.name] = { rating: c.rating || 0, note: c.note || '' }
+          const { wallets, cardNumber, phone, bank } = c
+          if (wallets || cardNumber || phone || bank) profiles[c.name] = { wallets, cardNumber, phone, bank }
+        }
+        set({ ratings, profiles, cloudError: null })
+        get().saveCache()
+        get().maybeMigrate()
+      },
+      onErr('contacts'),
+    )
+
+    const un3 = onSnapshot(
+      userDoc(owner),
+      (snap) => {
+        const d = snap.data()
+        if (!d) return
+        set({
+          knownCounterparties: Array.isArray(d.knownCounterparties) ? d.knownCounterparties : get().knownCounterparties,
+          period: d.period || get().period,
+        })
+        get().saveCache()
+      },
+      onErr('user'),
+    )
+
+    unsubs = [un1, un2, un3]
+  },
+
+  unbindUser: () => {
+    unsubs.forEach((u) => {
+      try {
+        u()
+      } catch {
+        /* noop */
+      }
+    })
+    unsubs = []
+    boundUid = null
+    set({ deals: [], ratings: {}, profiles: {}, knownCounterparties: [], period: 'all', cloudReady: false, cloudError: null })
+  },
+
+  // One-time upload of the pre-cloud local database (only if cloud is empty).
+  maybeMigrate: async () => {
+    if (migratedThisSession || !boundUid) return
+    const s = get()
+    if (s.deals.length > 0 || Object.keys(s.ratings).length > 0) {
+      migratedThisSession = true
+      return // cloud already has data — nothing to do
+    }
+    const legacy = readLegacyLocal()
+    if (!legacy || (legacy.deals.length === 0 && Object.keys(legacy.ratings).length === 0 && legacy.knownCounterparties.length === 0)) {
+      migratedThisSession = true
+      return
+    }
+    migratedThisSession = true
+    try {
+      const batch = writeBatch(db)
+      for (const d of legacy.deals) {
+        const id = d.id || uid()
+        batch.set(dealDoc(boundUid, id), { ...d, id })
+      }
+      const names = new Set([...Object.keys(legacy.ratings), ...Object.keys(legacy.profiles)])
+      for (const name of names) {
+        batch.set(
+          contactDoc(boundUid, name),
+          {
+            name,
+            rating: legacy.ratings[name]?.rating || 0,
+            note: legacy.ratings[name]?.note || '',
+            wallets: legacy.profiles[name]?.wallets || '',
+            cardNumber: legacy.profiles[name]?.cardNumber || '',
+            phone: legacy.profiles[name]?.phone || '',
+            bank: legacy.profiles[name]?.bank || '',
+          },
+          { merge: true },
+        )
+      }
+      if (legacy.knownCounterparties.length > 0) {
+        batch.set(userDoc(boundUid), { knownCounterparties: legacy.knownCounterparties }, { merge: true })
+      }
+      await batch.commit()
+      // Snapshots will pick the data up; local state updates via listeners.
+    } catch (e) {
+      console.warn('[spreadbook] migration failed', e?.code || e)
+    }
+  },
+
+  persistUserFields: async () => {
+    if (!boundUid) return
+    try {
+      await setDoc(
+        userDoc(boundUid),
+        { knownCounterparties: get().knownCounterparties, period: get().period },
+        { merge: true },
+      )
+    } catch {
+      /* offline — snapshot/cache keeps local state */
+    }
+  },
+
+  setPeriod: (period) => {
+    set({ period })
+    get().saveCache()
+    get().persistUserFields()
+  },
+
+  addDeal: async (deal) => {
+    const entry = { ...deal, id: deal.id || uid() }
+    set((s) => ({ deals: [entry, ...s.deals] }))
+    get().saveCache()
+    if (!boundUid) return
+    try {
+      await setDoc(dealDoc(boundUid, entry.id), entry)
+    } catch {
+      /* offline — will sync from cache next time */
+    }
+  },
+
+  updateDeal: async (id, patch) => {
+    set((s) => ({ deals: s.deals.map((d) => (d.id === id ? { ...d, ...patch } : d)) }))
+    get().saveCache()
+    if (!boundUid) return
+    try {
+      await setDoc(dealDoc(boundUid, id), patch, { merge: true })
+    } catch {
+      /* offline */
+    }
+  },
+
+  deleteDeal: async (id) => {
+    set((s) => ({ deals: s.deals.filter((d) => d.id !== id) }))
+    get().saveCache()
+    if (!boundUid) return
+    try {
+      await deleteDoc(dealDoc(boundUid, id))
+    } catch {
+      /* offline */
+    }
+  },
+
+  clearDemo: () => set({ deals: [], isDemo: false }),
+
+  resetAll: async () => {
+    const s = get()
+    set({ deals: [], ratings: {}, profiles: {}, knownCounterparties: [], isDemo: false })
+    get().saveCache()
+    if (!boundUid) return
+    try {
+      const batch = writeBatch(db)
+      for (const d of s.deals) batch.delete(dealDoc(boundUid, d.id))
+      for (const name of new Set([...Object.keys(s.ratings), ...Object.keys(s.profiles)])) {
+        batch.delete(contactDoc(boundUid, name))
+      }
+      batch.set(userDoc(boundUid), { knownCounterparties: [] }, { merge: true })
+      await batch.commit()
+    } catch {
+      /* offline */
+    }
+  },
+
+  // Import replaces the whole DB (with user confirmation in UI).
+  importData: async (payload) => {
+    const deals = (Array.isArray(payload?.deals) ? payload.deals : []).map((d) => ({ ...d, id: d.id || uid() }))
+    const ratings = payload?.ratings && typeof payload.ratings === 'object' ? payload.ratings : {}
+    const profiles = payload?.profiles && typeof payload.profiles === 'object' ? payload.profiles : {}
+    const known = Array.isArray(payload?.knownCounterparties) ? payload.knownCounterparties : []
+    set({ deals, ratings, profiles, knownCounterparties: known, isDemo: false })
+    get().saveCache()
+    if (!boundUid) return
+    try {
+      const batch = writeBatch(db)
+      for (const d of deals) batch.set(dealDoc(boundUid, d.id), d)
+      const names = new Set([...Object.keys(ratings), ...Object.keys(profiles)])
+      for (const name of names) {
+        batch.set(
+          contactDoc(boundUid, name),
+          {
+            name,
+            rating: ratings[name]?.rating || 0,
+            note: ratings[name]?.note || '',
+            wallets: profiles[name]?.wallets || '',
+            cardNumber: profiles[name]?.cardNumber || '',
+            phone: profiles[name]?.phone || '',
+            bank: profiles[name]?.bank || '',
+          },
+          { merge: true },
+        )
+      }
+      batch.set(userDoc(boundUid), { knownCounterparties: known }, { merge: true })
+      await batch.commit()
+    } catch {
+      /* offline */
+    }
+  },
+
+  setRating: async (name, rating, note = '') => {
+    set((s) => ({ ratings: { ...s.ratings, [name]: { rating, note } } }))
+    get().saveCache()
+    if (!boundUid) return
+    try {
+      await setDoc(contactDoc(boundUid, name), { name, rating, note }, { merge: true })
+    } catch {
+      /* offline */
+    }
+  },
+
+  setProfile: async (name, patch) => {
+    set((s) => ({
+      profiles: { ...s.profiles, [name]: { wallets: '', cardNumber: '', phone: '', bank: '', ...(s.profiles[name] || {}), ...patch } },
+    }))
+    get().saveCache()
+    if (!boundUid) return
+    try {
+      await setDoc(contactDoc(boundUid, name), { name, ...patch }, { merge: true })
+    } catch {
+      /* offline */
+    }
+  },
+
+  // Explicitly added counterparties (without deals yet).
+  addCounterparty: (name) => {
+    const clean = String(name || '').trim()
+    if (!clean) return false
+    const exists = get()
+      .counterparties()
+      .some((c) => c.toLowerCase() === clean.toLowerCase())
+    if (exists) return false
+    set((s) => ({ knownCounterparties: [...s.knownCounterparties, clean] }))
+    get().saveCache()
+    get().persistUserFields()
+    return true
+  },
+
+  removeCounterparty: (name) => {
+    set((s) => ({ knownCounterparties: s.knownCounterparties.filter((c) => c !== name) }))
+    get().saveCache()
+    get().persistUserFields()
+  },
+
+  // Full delete: removes from known list, drops rating/profile, and
+  // unlinks the name from existing deals (deals themselves are kept).
+  deleteCounterparty: async (name) => {
+    const s = get()
+    const ratings = { ...s.ratings }
+    delete ratings[name]
+    const profiles = { ...s.profiles }
+    delete profiles[name]
+    set({
+      knownCounterparties: s.knownCounterparties.filter((c) => c !== name),
+      ratings,
+      profiles,
+      deals: s.deals.map((d) => (d.counterparty === name ? { ...d, counterparty: '' } : d)),
+    })
+    get().saveCache()
+    if (!boundUid) return
+    try {
+      const batch = writeBatch(db)
+      batch.delete(contactDoc(boundUid, name))
+      for (const d of s.deals) {
+        if (d.counterparty === name) batch.set(dealDoc(boundUid, d.id), { counterparty: '' }, { merge: true })
+      }
+      batch.set(userDoc(boundUid), { knownCounterparties: get().knownCounterparties }, { merge: true })
+      await batch.commit()
+    } catch {
+      /* offline */
+    }
+  },
+
+  counterparties: () => {
+    const fromDeals = get().deals.map((d) => (d.counterparty || '').trim()).filter(Boolean)
+    const names = new Set([...fromDeals, ...get().knownCounterparties])
+    return [...names].sort((a, b) => a.localeCompare(b, 'ru'))
+  },
+}))

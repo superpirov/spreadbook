@@ -57,28 +57,38 @@ npm run deploy
 - Состояние подписки (`trialStart / plan / expiresAt`) — в `useAuth`, гейт — в `CabinetLayout` (App.jsx). Просрочка закрывает разделы кабинета пейволлом, страница оплаты остаётся доступна.
 - Ограничение: enforcement клиентский (localStorage). Строгая защита — бэкенд-воркер с проверкой Trongrid (бэклог).
 
-## Админка и Firestore (реестр пользователей)
+## Админка и Firestore (реестр + синхронизация)
 
 Подписки зеркалируются в Firestore (`users/{uid}`), админка — `/app/admin` (доступ только для email из `ADMIN_EMAILS` в `src/utils/admin.js`).
+Все данные пользователя синхронизируются между устройствами в реальном времени:
+- `users/{uid}/deals/{dealId}` — сделки (id документа = id сделки),
+- `users/{uid}/contacts/{urlencoded-name}` — рейтинг, заметка и реквизиты,
+- `users/{uid}` — `knownCounterparties[]`, `period` + профиль/подписка.
 
-Включение (в Firebase Console):
-1. Build → Firestore Database → Create database → Production mode → Enable.
-2. Вкладка Rules → вставить ниже → Publish (email владельца уже подставлен).
-3. В `src/utils/admin.js` вписать тот же email в `ADMIN_EMAILS`, запушить.
+Правила (Rules → Publish, email владельца уже подставлен):
 
 ```
 rules_version = '2';
 service cloud.firestore {
   match /databases/{db}/documents {
+    function ownerOrAdmin(uid) {
+      return request.auth != null
+        && (request.auth.uid == uid || request.auth.token.email == 'pirov.ru@yandex.ru');
+    }
     match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
-      allow read, write: if request.auth != null && request.auth.token.email == 'pirov.ru@yandex.ru';
+      allow read, write: if ownerOrAdmin(uid);
+      match /deals/{dealId} {
+        allow read, write: if ownerOrAdmin(uid);
+      }
+      match /contacts/{contactId} {
+        allow read, write: if ownerOrAdmin(uid);
+      }
     }
   }
 }
 ```
 
-Без включённого Firestore приложение работает в локальном режиме (подписки только в браузере), админка покажет подсказку.
+Как устроен стор (`src/store/useStore.js`): при входе `bindUser(uid)` поднимает 3 realtime-подписки (`onSnapshot`), localStorage остаётся мгновенным кэшем (`spreadbook-cache-v1-{uid}`) и офлайн-фallback; запись — оптимистично локально, затем во Firestore. Включён persistent offline cache Firestore: без интернета всё работает, при появлении сети досинхронизируется само. Старая локальная база (`spreadbook-storage-v2`) один раз автоматически переезжает в облако, если облако пусто. Выход (`unbindUser`) очищает данные из памяти — важно на чужих устройствах.
 
 ## Модель прибыли (MVP)
 

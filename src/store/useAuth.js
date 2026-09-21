@@ -11,6 +11,7 @@ import {
 import { auth } from '../utils/firebase.js'
 import { getPlan } from '../utils/billing.js'
 import { ensureUserDoc, saveSubToCloud } from '../utils/users.js'
+import { useStore } from './useStore.js'
 
 // Real Firebase Authentication (email/password).
 // Trial/pro subscription is keyed by Firebase uid, so different users on one
@@ -90,6 +91,7 @@ export const useAuth = create(
         listenerStarted = true
         onAuthStateChanged(auth, (fb) => {
           if (!fb) {
+            useStore.getState().unbindUser()
             set({ user: null, authReady: true })
             return
           }
@@ -104,6 +106,7 @@ export const useAuth = create(
           } else {
             set({ user, authReady: true })
           }
+          useStore.getState().bindUser(user.id)
           syncCloud(user, get, set)
         })
       },
@@ -119,6 +122,7 @@ export const useAuth = create(
           user,
           subs: { ...s.subs, [cred.user.uid]: s.subs[cred.user.uid] || readLegacyTrial(clean) || freshSub() },
         })
+        useStore.getState().bindUser(user.id)
         syncCloud(user, get, set)
       },
 
@@ -131,12 +135,14 @@ export const useAuth = create(
           user,
           subs: { ...s.subs, [user.id]: s.subs[user.id] || readLegacyTrial(clean) || freshSub() },
         })
+        useStore.getState().bindUser(user.id)
         syncCloud(user, get, set)
       },
 
       resetPassword: (email) => sendPasswordResetEmail(auth, String(email || '').trim()),
 
       logout: async () => {
+        useStore.getState().unbindUser()
         await signOut(auth)
         set({ user: null })
       },
