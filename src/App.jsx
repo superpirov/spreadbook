@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 import Billing from './components/Billing.jsx'
 import { useCurrentSub } from './store/useAuth.js'
+import { useStore } from './store/useStore.js'
 import { getAccessState } from './utils/billing.js'
 import Landing from './pages/Landing.jsx'
 import Login from './pages/Login.jsx'
@@ -18,6 +19,8 @@ import Admin from './pages/Admin.jsx'
 // Public landing + login, cabinet (/app/*) behind auth gate + paywall.
 function CabinetLayout() {
   const sub = useCurrentSub()
+  const cloudError = useStore((s) => s.cloudError)
+  const cloudReady = useStore((s) => s.cloudReady)
   const loc = useLocation()
   const locked = getAccessState(sub).status === 'expired' && !loc.pathname.endsWith('/billing')
 
@@ -26,7 +29,17 @@ function CabinetLayout() {
       <Header mode="cabinet" />
       <div className="mx-auto flex w-full max-w-7xl gap-6 px-4 pb-16 pt-6 sm:px-6">
         <Sidebar />
-        <main className="min-w-0 flex-1">
+        <main className="min-w-0 flex-1 space-y-4">
+          {cloudError && (
+            <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-4 py-2.5 text-sm text-red-200">
+              {cloudError} Проверьте Rules Firestore и интернет, затем обновите страницу.
+            </div>
+          )}
+          {!cloudReady && !cloudError && (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm text-slate-400">
+              Подключаемся к облаку…
+            </div>
+          )}
           {locked ? <Paywall /> : <Outlet />}
         </main>
       </div>

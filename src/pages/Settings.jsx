@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
-import { Download, Upload, Trash2, FileSpreadsheet } from 'lucide-react'
+import { Download, Upload, Trash2, FileSpreadsheet, Cloud, CloudOff, Loader2 } from 'lucide-react'
 import { useStore } from '../store/useStore.js'
+import { useAuth } from '../store/useAuth.js'
 
 function toCSV(deals) {
   const head = ['id', 'datetime', 'type', 'asset', 'fiat', 'amount', 'price', 'fee', 'platform', 'counterparty', 'notes']
@@ -17,6 +18,9 @@ export default function Settings() {
   const profiles = useStore((s) => s.profiles)
   const importData = useStore((s) => s.importData)
   const resetAll = useStore((s) => s.resetAll)
+  const cloudReady = useStore((s) => s.cloudReady)
+  const cloudError = useStore((s) => s.cloudError)
+  const user = useAuth((s) => s.user)
   const fileRef = useRef(null)
   const [msg, setMsg] = useState('')
 
@@ -61,7 +65,28 @@ export default function Settings() {
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-extrabold tracking-tight">Импорт / Экспорт</h1>
-        <p className="text-sm text-slate-400">Данные живут только в вашем браузере (localStorage). Делайте бэкапы.</p>
+        <p className="text-sm text-slate-400">Данные синхронизируются между устройствами через облако. Бэкап в файл — дополнительная страховка.</p>
+      </div>
+      <div className="card p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-bold">Синхронизация</h3>
+          {cloudError ? (
+            <span className="inline-flex items-center gap-1.5 rounded-xl bg-red-500/15 px-3 py-1.5 text-xs font-bold text-red-200">
+              <CloudOff size={13} /> Нет связи с облаком
+            </span>
+          ) : cloudReady ? (
+            <span className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500/15 px-3 py-1.5 text-xs font-bold text-emerald-200">
+              <Cloud size={13} /> Облако подключено
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-xl bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-400">
+              <Loader2 size={13} className="animate-spin" /> Подключение…
+            </span>
+          )}
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          Аккаунт: {user?.email || '—'} · {cloudError ? 'Показаны локальные данные. Проверьте Rules Firestore и интернет, затем обновите страницу.' : 'Все изменения на этом устройстве автоматически появляются на других.'}
+        </p>
       </div>
       <div className="card p-5">
         <div className="grid gap-3 sm:grid-cols-3">
@@ -79,7 +104,7 @@ export default function Settings() {
       </div>
       <div className="card border-red-500/20 p-5">
         <h3 className="text-sm font-bold text-red-300">Опасная зона</h3>
-        <p className="mt-1 text-xs text-slate-400">Удалить все сделки и рейтинги из этого браузера без возможности восстановления.</p>
+        <p className="mt-1 text-xs text-slate-400">Удалить все сделки, контакты и реквизиты везде — на всех устройствах. Без возможности восстановления.</p>
         <button
           className="mt-3 inline-flex items-center gap-2 rounded-xl bg-red-500/15 px-4 py-2.5 text-sm font-semibold text-red-200 hover:bg-red-500/25"
           onClick={() => { if (window.confirm('Точно удалить ВСЕ данные? Сделайте бэкап!')) { resetAll(); setMsg('Все данные удалены.') } }}
