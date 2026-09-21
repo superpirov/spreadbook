@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { LogIn, Mail, User } from 'lucide-react'
-import { AUTH_MODE, useAuth } from '../store/useAuth.js'
+import { useAuth } from '../store/useAuth.js'
 
 export default function Login() {
   const user = useAuth((s) => s.user)
@@ -43,9 +43,7 @@ export default function Login() {
       <form onSubmit={submit} className="card p-6">
         <h2 className="text-base font-bold">Войти по почте</h2>
         <p className="mt-1 text-xs leading-relaxed text-slate-500">
-          {AUTH_MODE === 'local'
-            ? 'Локальный режим: профиль создается в этом браузере без пароля и сервера. Настоящий вход с паролем появится после подключения Firebase.'
-            : 'Вход через Firebase Authentication.'}
+          Первые 3 дня — полный доступ без оплаты. Далее PRO-подписка — 29 USDT в месяц (оплата в USDT, сеть TRC-20).
         </p>
         <label className="label mt-4">Почта</label>
         <div className="relative">

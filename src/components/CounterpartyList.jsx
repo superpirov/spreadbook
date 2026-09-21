@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Star, User } from 'lucide-react'
+import { Star, User, UserPlus } from 'lucide-react'
 import { useStore } from '../store/useStore.js'
 import { dealFiatTotal, dealNetValue } from '../utils/calculations.js'
 import { formatMoney, formatDateTime } from '../utils/formatters.js'
@@ -7,25 +7,48 @@ import { formatMoney, formatDateTime } from '../utils/formatters.js'
 export default function CounterpartyList() {
   const deals = useStore((s) => s.deals)
   const ratings = useStore((s) => s.ratings)
+  const knownCounterparties = useStore((s) => s.knownCounterparties)
   const setRating = useStore((s) => s.setRating)
+  const addCounterparty = useStore((s) => s.addCounterparty)
   const [selected, setSelected] = useState(null)
   const [noteDraft, setNoteDraft] = useState('')
+  const [newName, setNewName] = useState('')
+  const [addError, setAddError] = useState('')
+
+  const submitNew = (e) => {
+    e.preventDefault()
+    const ok = addCounterparty(newName)
+    if (!ok) {
+      setAddError('Введите уникальное имя (такой контрагент уже есть)')
+      return
+    }
+    const clean = newName.trim()
+    setNewName('')
+    setAddError('')
+    setSelected(clean)
+    setNoteDraft(ratings[clean]?.note || '')
+  }
 
   const stats = useMemo(() => {
     const map = new Map()
+    const touch = (name) => {
+      if (!map.has(name)) map.set(name, { name, deals: [], volume: 0, net: 0 })
+      return map.get(name)
+    }
     for (const d of deals) {
       const name = (d.counterparty || '').trim()
       if (!name) continue
-      if (!map.has(name)) map.set(name, { name, deals: [], volume: 0, net: 0 })
-      const e = map.get(name)
+      const e = touch(name)
       e.deals.push(d)
       e.volume += dealFiatTotal(d)
       e.net += dealNetValue(d)
     }
+    // Include explicitly added counterparties even before their first deal.
+    for (const n of knownCounterparties) touch(n)
     return [...map.values()]
       .map((e) => ({ ...e, deals: e.deals.sort((a, b) => new Date(b.datetime) - new Date(a.datetime)) }))
       .sort((a, b) => b.volume - a.volume)
-  }, [deals])
+  }, [deals, knownCounterparties])
 
   const sel = stats.find((s) => s.name === selected)
 
@@ -33,6 +56,18 @@ export default function CounterpartyList() {
     <div className="grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
       <div className="card p-3">
         <h3 className="px-2 pb-2 text-sm font-bold">Люди ({stats.length})</h3>
+        <form onSubmit={submitNew} className="mb-2 flex gap-2 px-1">
+          <input
+            className="input"
+            placeholder="+ Новый контрагент…"
+            value={newName}
+            onChange={(e) => { setNewName(e.target.value); setAddError('') }}
+          />
+          <button type="submit" className="btn-primary shrink-0 px-3" title="Добавить контрагента">
+            <UserPlus size={16} />
+          </button>
+        </form>
+        {addError && <p className="px-2 pb-1 text-xs text-red-400">{addError}</p>}
         <div className="max-h-[540px] space-y-1.5 overflow-y-auto">
           {stats.map((s) => {
             const r = ratings[s.name]

@@ -47,6 +47,16 @@ npm run deploy
 4. Альтернативы: Supabase Auth, Clerk, Auth0 — схема та же, меняется только `useAuth.js`.
 5. Данные сделок при этом остаются в `localStorage` (per-browser). Чтобы они ездили за пользователем между устройствами — следующий шаг: Firestore/Supabase вместо стора (отдельная задача).
 
+## Оплата (BILLING)
+
+Модель: 3 дня триала с момента первого входа, далее PRO-подписка — 29 USDT / 30 дней.
+
+- Настройки в `src/utils/billing.js`: `BILLING.wallet` (TRC-20 адрес), `BILLING.price`, `BILLING.periodDays`, `BILLING.trialDays`.
+- Пользователь отправляет USDT (TRC-20) на кошелёк и вставляет TXID на странице `/app/billing`.
+- Проверка ончейн: `verifyUsdtPayment()` опрашивает Tronscan public API (`transaction-info`), сверяет получателя, USDT-контракт `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t`, сумму ≥ цены и подтверждение сети.
+- Состояние подписки (`trialStart / plan / expiresAt`) — в `useAuth`, гейт — в `CabinetLayout` (App.jsx). Просрочка закрывает разделы кабинета пейволлом, страница оплаты остаётся доступна.
+- Ограничение: enforcement клиентский (localStorage). Строгая защита — бэкенд-воркер с проверкой Trongrid (бэклог).
+
 ## Модель прибыли (MVP)
 
 Упрощенный cash-flow, а не точный accounting P&L:

@@ -32,6 +32,7 @@ export default function Header({ mode = 'public' }) {
             <CabLink to="/app/deals">Сделки</CabLink>
             <CabLink to="/app/contacts">Люди</CabLink>
             <CabLink to="/app/settings">Бэкап</CabLink>
+            <CabLink to="/app/billing">Тариф</CabLink>
           </nav>
           <div className="ml-auto flex items-center gap-2">
             <span className="hidden max-w-[180px] truncate rounded-xl bg-white/5 px-3 py-1.5 text-xs text-slate-300 sm:block" title={user?.email}>
@@ -52,6 +53,7 @@ export default function Header({ mode = 'public' }) {
           <CabLink to="/app/deals">Сделки</CabLink>
           <CabLink to="/app/contacts">Люди</CabLink>
           <CabLink to="/app/settings">Бэкап</CabLink>
+          <CabLink to="/app/billing">Тариф</CabLink>
         </nav>
       </header>
     )

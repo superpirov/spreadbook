@@ -1,25 +1,55 @@
-import { HashRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate, Outlet, useLocation, Link } from 'react-router-dom'
+import { Lock } from 'lucide-react'
 import Header from './components/Header.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
+import Billing from './components/Billing.jsx'
+import { useAuth } from './store/useAuth.js'
+import { getAccessState } from './utils/billing.js'
 import Landing from './pages/Landing.jsx'
 import Login from './pages/Login.jsx'
 import Home from './pages/Home.jsx'
 import Deals from './pages/Deals.jsx'
 import Contacts from './pages/Contacts.jsx'
 import Settings from './pages/Settings.jsx'
+import BillingPage from './pages/BillingPage.jsx'
 
-// Public landing + login, cabinet (/app/*) behind auth gate.
+// Public landing + login, cabinet (/app/*) behind auth gate + paywall.
 function CabinetLayout() {
+  const sub = useAuth((s) => s.sub)
+  const loc = useLocation()
+  const locked = getAccessState(sub).status === 'expired' && !loc.pathname.endsWith('/billing')
+
   return (
     <div className="min-h-screen">
       <Header mode="cabinet" />
       <div className="mx-auto flex w-full max-w-7xl gap-6 px-4 pb-16 pt-6 sm:px-6">
         <Sidebar />
         <main className="min-w-0 flex-1">
-          <Outlet />
+          {locked ? <Paywall /> : <Outlet />}
         </main>
       </div>
+    </div>
+  )
+}
+
+function Paywall() {
+  return (
+    <div className="space-y-4">
+      <div className="card border-red-500/20 bg-gradient-to-br from-red-500/10 to-transparent p-6 text-center">
+        <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-red-500/15 text-red-300">
+          <Lock size={22} />
+        </span>
+        <h1 className="mt-3 text-xl font-extrabold">Пробный доступ закончился</h1>
+        <p className="mx-auto mt-1 max-w-lg text-sm text-slate-400">
+          Ваши данные на месте и никуда не делись. Чтобы продолжить пользоваться всеми возможностями сервиса,
+          оформите PRO-подписку — проверка оплаты автоматическая, по хешу транзакции.
+        </p>
+        <Link to="/app/billing" className="btn-primary mx-auto mt-4 w-fit">
+          Перейти к оплате
+        </Link>
+      </div>
+      <Billing compact />
     </div>
   )
 }
@@ -56,6 +86,7 @@ export default function App() {
           <Route path="deals" element={<Deals />} />
           <Route path="contacts" element={<Contacts />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="billing" element={<BillingPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

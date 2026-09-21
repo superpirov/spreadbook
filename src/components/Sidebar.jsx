@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, ArrowLeftRight, Users, DatabaseBackup, Plus } from 'lucide-react'
+import { LayoutDashboard, ArrowLeftRight, Users, DatabaseBackup, Plus, Crown } from 'lucide-react'
 
 const item = ({ isActive }) =>
   `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
@@ -25,6 +25,9 @@ export default function Sidebar() {
           </NavLink>
           <NavLink to="/app/settings" className={item}>
             <DatabaseBackup size={17} /> Импорт / Экспорт
+          </NavLink>
+          <NavLink to="/app/billing" className={item}>
+            <Crown size={17} /> Тариф и оплата
           </NavLink>
         </nav>
         <p className="mt-4 rounded-xl bg-white/[0.04] p-3 text-xs leading-relaxed text-slate-400">

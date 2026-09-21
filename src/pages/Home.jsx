@@ -1,7 +1,9 @@
 import { useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { useAuth } from '../store/useAuth.js'
 import { filterByPeriod } from '../utils/calculations.js'
+import { getAccessState } from '../utils/billing.js'
 import DashboardCards from '../components/DashboardCards.jsx'
 import ChartsSection from '../components/ChartsSection.jsx'
 
@@ -10,9 +12,9 @@ export default function Home() {
   const deals = useStore((s) => s.deals)
   const period = useStore((s) => s.period)
   const setPeriod = useStore((s) => s.setPeriod)
-  const isDemo = useStore((s) => s.isDemo)
-  const clearDemo = useStore((s) => s.clearDemo)
   const user = useAuth((s) => s.user)
+  const sub = useAuth((s) => s.sub)
+  const access = getAccessState(sub)
 
   const scoped = useMemo(() => filterByPeriod(deals, period), [deals, period])
 
@@ -24,12 +26,12 @@ export default function Home() {
         </h1>
         <p className="text-sm text-slate-400">Ваш дашборд: прибыль, объемы и динамика капитала.</p>
       </div>
-      {isDemo && deals.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-2.5 text-sm">
-          <span className="text-amber-200">Загружены демо-данные, чтобы показать графики.</span>
-          <button onClick={() => { if (window.confirm('Удалить демо-сделки?')) clearDemo() }} className="rounded-lg bg-amber-400/20 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-400/30">
-            Очистить демо-данные
-          </button>
+      {access.status === 'trial' && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-mint/25 bg-mint/10 px-4 py-2.5 text-sm">
+          <span className="text-mint-soft">Пробный доступ: осталось {access.daysLeft} дн. Затем понадобится PRO-подписка.</span>
+          <Link to="/app/billing" className="rounded-lg bg-mint/20 px-3 py-1.5 text-xs font-semibold text-emerald-100 hover:bg-mint/30">
+            Тарифы
+          </Link>
         </div>
       )}
       <DashboardCards deals={scoped} period={period} onPeriod={setPeriod} />

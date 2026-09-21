@@ -45,7 +45,7 @@ const FEATURES = [
 ]
 
 const STEPS = [
-  ['01', 'Войдите по почте', 'Создайте локальный профиль за 10 секунд. Скоро — настоящий вход через Firebase.'],
+  ['01', 'Войдите по почте', 'Создайте профиль за 10 секунд и получите 3 дня полного доступа.'],
   ['02', 'Записывайте сделки', 'Фиксируйте покупки и продажи прямо с телефона после каждой P2P-операции.'],
   ['03', 'Смотрите прибыль', 'Дашборд покажет спреды, лучший площадки и самых выгодных контрагентов.'],
 ]
@@ -65,7 +65,7 @@ const FAQ = [
   },
   {
     q: 'Сколько стоит?',
-    a: 'Ничего. Это open-source статический сайт: хостинг на GitHub Pages бесплатен, бэкенда нет.',
+    a: 'Первые 3 дня — полный доступ без оплаты. Далее PRO-подписка: 29 USDT в месяц с оплатой в USDT (сеть TRC-20). Проверка платежа автоматическая — по хешу транзакции.',
   },
 ]
 
@@ -106,8 +106,36 @@ export default function Landing() {
           ))}
         </div>
         <Link to="/login" className="btn-primary mt-6">
-          Начать бесплатно <ArrowRight size={16} />
+          Начать пробный доступ <ArrowRight size={16} />
         </Link>
+      </section>
+
+      {/* Pricing */}
+      <section id="pricing" className="scroll-mt-24">
+        <p className="text-xs font-semibold uppercase tracking-widest text-brand-soft">Тарифы</p>
+        <h2 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">Три дня — бесплатно, дальше — PRO</h2>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <div className="card p-6">
+            <h3 className="font-bold text-mint-soft">Пробный доступ</h3>
+            <div className="mt-2 text-3xl font-extrabold">0 USDT <span className="text-sm font-medium text-slate-400">/ 3 дня</span></div>
+            <ul className="mt-4 space-y-2 text-sm text-slate-300">
+              {['Все возможности без ограничений', 'Без привязки карты', 'Данные остаются вашими'].map((t) => (
+                <li key={t} className="flex items-center gap-2"><Check size={15} className="text-mint-soft" />{t}</li>
+              ))}
+            </ul>
+            <Link to="/login" className="btn-ghost mt-5 w-full">Попробовать</Link>
+          </div>
+          <div className="card border-amber-400/30 bg-gradient-to-br from-amber-400/10 to-transparent p-6">
+            <h3 className="font-bold text-amber-200">PRO</h3>
+            <div className="mt-2 text-3xl font-extrabold">29 USDT <span className="text-sm font-medium text-slate-400">/ 30 дней</span></div>
+            <ul className="mt-4 space-y-2 text-sm text-slate-300">
+              {['Всё из пробного, без лимита по времени', 'Оплата в USDT, сеть TRC-20', 'Автопроверка платежа по TXID'].map((t) => (
+                <li key={t} className="flex items-center gap-2"><Check size={15} className="text-amber-300" />{t}</li>
+              ))}
+            </ul>
+            <Link to="/login" className="btn-primary mt-5 w-full">Начать с триала <ArrowRight size={16} /></Link>
+          </div>
+        </div>
       </section>
 
       {/* FAQ */}
@@ -134,7 +162,7 @@ export default function Landing() {
           </p>
           <div className="mt-5 flex flex-wrap justify-center gap-3">
             <Link to="/login" className="btn-primary">
-              <Check size={16} /> Войти — это бесплатно
+              <Check size={16} /> Попробовать 3 дня бесплатно
             </Link>
           </div>
         </div>

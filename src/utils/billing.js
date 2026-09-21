@@ -1,0 +1,90 @@
+// Billing: 3-day free trial + paid USDT (TRC-20) subscription.
+//
+// Enforcement is client-side (static hosting has no backend): the subscription
+// state lives in localStorage. A tech-savvy user can bypass it via devtools —
+// for strict enforcement a backend webhook (e.g. Firebase Function checking
+// Trongrid) is needed later. The on-chain TX check below is real verification
+// against Tronscan public API, so casual abuse is blocked.
+
+export const BILLING = {
+  wallet: 'TQquJdaR7a5FZgJcikHKTYsB2fJeQVoHSN',
+  network: 'TRC-20',
+  asset: 'USDT',
+  price: 29, // USDT per period — change here
+  periodDays: 30,
+  trialDays: 3,
+}
+
+export const USDT_TRC20_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
+const DAY = 24 * 60 * 60 * 1000
+
+export function getAccessState(sub) {
+  const now = Date.now()
+  if (sub?.plan === 'pro' && sub?.expiresAt && new Date(sub.expiresAt).getTime() > now) {
+    return { status: 'pro', daysLeft: Math.ceil((new Date(sub.expiresAt).getTime() - now) / DAY) }
+  }
+  if (sub?.trialStart) {
+    const left = Math.ceil((new Date(sub.trialStart).getTime() + BILLING.trialDays * DAY - now) / DAY)
+    if (left > 0) return { status: 'trial', daysLeft: left }
+  }
+  return { status: 'expired', daysLeft: 0 }
+}
+
+export function trialEndDate(sub) {
+  if (!sub?.trialStart) return null
+  return new Date(new Date(sub.trialStart).getTime() + BILLING.trialDays * DAY)
+}
+
+// Verify a USDT TRC-20 payment by TXID via Tronscan public API.
+// Throws with a human-readable (Russian) message when anything is off.
+export async function verifyUsdtPayment(txHash) {
+  const hash = String(txHash || '').trim()
+  if (!/^[0-9a-fA-F]{64}$/.test(hash)) {
+    throw new Error('TXID должен состоять из 64 hex-символов (0-9, a-f). Скопируйте хеш из кошелька или Tronscan.')
+  }
+
+  let res
+  try {
+    res = await fetch(`https://apilist.tronscanapi.com/api/transaction-info?hash=${hash}`)
+  } catch {
+    throw new Error('Не удалось опросить сеть Tron. Проверьте интернет и попробуйте ещё раз.')
+  }
+  if (!res.ok) throw new Error('Tronscan временно недоступен. Попробуйте позже.')
+
+  const j = await res.json()
+  if (!j || j.id == null) {
+    throw new Error('Транзакция с таким хешем не найдена. Проверьте TXID и сеть (нужна TRC-20).')
+  }
+
+  const confirmed = j.confirmed === true || (j.confirmations ?? 0) > 0 || j.block != null
+  if (!confirmed) throw new Error('Транзакция найдена, но ещё не подтверждена сетью. Подождите пару минут.')
+
+  // Collect candidate TRC-20 transfers from all known response shapes.
+  const candidates = []
+  const push = (to, amountRaw, contract) => {
+    if (to || amountRaw) candidates.push({ to, amountRaw, contract })
+  }
+  if (j.contractData) push(j.contractData.to_address, j.contractData.amount, j.contractData.contract_address || j.contract_address)
+  if (j.tokenTransferInfo) push(j.tokenTransferInfo.to_address, j.tokenTransferInfo.amount_str ?? j.tokenTransferInfo.amount, j.tokenTransferInfo.contract_address)
+  const list = j.trc20TransferInfo || j.trc20_transfer_info
+  if (Array.isArray(list)) for (const t of list) push(t.to_address, t.amount_str ?? t.amount, t.contract_address)
+
+  const need = BILLING.price * 1e6 // USDT has 6 decimals
+  const match = candidates.find((c) => {
+    const to = String(c.to || '')
+    const isUsdt = String(c.contract || '').toLowerCase() === USDT_TRC20_CONTRACT.toLowerCase()
+    const amount = Number(c.amountRaw)
+    return to === BILLING.wallet && isUsdt && amount >= need
+  })
+
+  if (!match) {
+    throw new Error(
+      `Подходящий перевод не найден: нужен перевод ${BILLING.price} ${BILLING.asset} (${BILLING.network}) на адрес ${BILLING.wallet}. Проверьте сумму, токен и сеть.`,
+    )
+  }
+  return true
+}
+
+export function tronscanUrl(hash) {
+  return `https://tronscan.org/#/transaction/${hash}`
+}

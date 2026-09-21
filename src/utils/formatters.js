@@ -39,5 +39,9 @@ export function toLocalInputValue(date = new Date()) {
 }
 
 export const ASSETS = ['USDT', 'BTC', 'ETH', 'SOL', 'TON', 'TRX', 'BNB']
-export const FIATS = ['RUB', 'UAH', 'KZT', 'USD', 'TRY']
+// Ex-USSR + regions with large Russian-speaking population.
+export const FIATS = [
+  'RUB', 'UAH', 'KZT', 'BYN', 'AMD', 'AZN', 'GEL', 'KGS', 'MDL', 'TJS', 'TMT', 'UZS',
+  'USD', 'EUR', 'TRY', 'ILS', 'AED',
+]
 export const PLATFORMS = ['Bybit', 'Binance', 'Tinkoff', 'Sber', 'Cash', 'Other']

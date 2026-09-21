@@ -10,8 +10,9 @@ export const useStore = create(
   persist(
     (set, get) => ({
       deals: mockDeals,
-      isDemo: true,
+      isDemo: false,
       ratings: mockRatings,
+      knownCounterparties: [],
       period: 'all',
       theme: 'dark',
 
@@ -34,13 +35,14 @@ export const useStore = create(
 
       clearDemo: () => set({ deals: [], isDemo: false }),
 
-      resetAll: () => set({ deals: [], ratings: {}, isDemo: false }),
+      resetAll: () => set({ deals: [], ratings: {}, knownCounterparties: [], isDemo: false }),
 
       // Import replaces the whole DB (with user confirmation in UI).
       importData: (payload) => {
         const deals = Array.isArray(payload?.deals) ? payload.deals : []
         const ratings = payload?.ratings && typeof payload.ratings === 'object' ? payload.ratings : {}
-        set({ deals, ratings, isDemo: false })
+        const known = Array.isArray(payload?.knownCounterparties) ? payload.knownCounterparties : []
+        set({ deals, ratings, knownCounterparties: known, isDemo: false })
       },
 
       setRating: (name, rating, note = '') =>
@@ -48,14 +50,40 @@ export const useStore = create(
           ratings: { ...s.ratings, [name]: { rating, note } },
         })),
 
+      // Explicitly added counterparties (without deals yet).
+      addCounterparty: (name) => {
+        const clean = String(name || '').trim()
+        if (!clean) return false
+        const exists = get()
+          .counterparties()
+          .some((c) => c.toLowerCase() === clean.toLowerCase())
+        if (exists) return false
+        set((s) => ({ knownCounterparties: [...s.knownCounterparties, clean] }))
+        return true
+      },
+
+      removeCounterparty: (name) =>
+        set((s) => ({
+          knownCounterparties: s.knownCounterparties.filter((c) => c !== name),
+        })),
+
       counterparties: () => {
-        const names = new Set(get().deals.map((d) => (d.counterparty || '').trim()).filter(Boolean))
+        const fromDeals = get().deals.map((d) => (d.counterparty || '').trim()).filter(Boolean)
+        const names = new Set([...fromDeals, ...get().knownCounterparties])
         return [...names].sort((a, b) => a.localeCompare(b, 'ru'))
       },
     }),
     {
-      name: 'spreadbook-storage-v1',
-      partialize: (s) => ({ deals: s.deals, ratings: s.ratings, isDemo: s.isDemo, period: s.period }),
+      // v2: demo seed removed + knownCounterparties added. Old v1 persisted
+      // demo data is intentionally dropped by the key change.
+      name: 'spreadbook-storage-v2',
+      partialize: (s) => ({
+        deals: s.deals,
+        ratings: s.ratings,
+        knownCounterparties: s.knownCounterparties,
+        isDemo: s.isDemo,
+        period: s.period,
+      }),
     },
   ),
 )
