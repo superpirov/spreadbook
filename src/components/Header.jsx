@@ -1,19 +1,11 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom'
-import { CandlestickChart, LogIn, LogOut } from 'lucide-react'
+import { LogIn, LogOut } from 'lucide-react'
 import { useAuth } from '../store/useAuth.js'
 import { isAdmin } from '../utils/admin.js'
+import logo from '../assets/logo.png'
 
 function Logo() {
-  return (
-    <span className="flex items-center gap-2">
-      <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-brand to-mint shadow-glow">
-        <CandlestickChart size={20} className="text-white" />
-      </span>
-      <span className="text-lg font-extrabold tracking-tight">
-        Spread<span className="bg-gradient-to-r from-brand-soft to-mint-soft bg-clip-text text-transparent">Book</span>
-      </span>
-    </span>
-  )
+  return <img src={logo} alt="SpreadBook" className="h-9 w-auto" />
 }
 
 // mode="public"  -> landing/login header with a Login button.
