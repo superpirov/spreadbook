@@ -69,8 +69,8 @@ export default function Login() {
   }
 
   return (
-    <div className="mx-auto grid w-full max-w-4xl items-center gap-6 py-8 md:grid-cols-2">
-      <div>
+    <div className="mx-auto grid w-full max-w-4xl items-start gap-6 py-8 md:grid-cols-2">
+      <div className="md:pt-8">
         <p className="text-xs font-semibold uppercase tracking-widest text-brand-soft">Вход в SpreadBook</p>
         <h1 className="mt-1 text-3xl font-extrabold tracking-tight">
           Ваш кабинет <span className="bg-gradient-to-r from-brand-soft to-mint-soft bg-clip-text text-transparent">под защитой</span>

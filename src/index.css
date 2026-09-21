@@ -45,30 +45,32 @@ input[type='number'] {
   appearance: textfield;
 }
 
-.card {
-  @apply rounded-2xl border border-white/10 bg-ink-900/80 shadow-card backdrop-blur;
-}
+@layer components {
+  .card {
+    @apply rounded-2xl border border-white/10 bg-ink-900/80 shadow-card backdrop-blur;
+  }
 
-.input {
-  @apply w-full rounded-xl border border-white/10 bg-ink-950/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-brand/70 focus:ring-2 focus:ring-brand/30;
-}
+  .input {
+    @apply w-full rounded-xl border border-white/10 bg-ink-950/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 outline-none transition focus:border-brand/70 focus:ring-2 focus:ring-brand/30;
+  }
 
-.input-error {
-  @apply border-red-500/70 ring-2 ring-red-500/20;
-}
+  .input-error {
+    @apply border-red-500/70 ring-2 ring-red-500/20;
+  }
 
-.label {
-  @apply mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400;
-}
+  .label {
+    @apply mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400;
+  }
 
-.btn-primary {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand to-brand-soft px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
-}
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand to-brand-soft px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
+  }
 
-.btn-mint {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-mint-deep to-mint px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
-}
+  .btn-mint {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-mint-deep to-mint px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
+  }
 
-.btn-ghost {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/10 active:scale-[0.98];
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/10 active:scale-[0.98];
+  }
 }
