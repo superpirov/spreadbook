@@ -10,20 +10,20 @@ export default function Sidebar() {
   return (
     <aside className="hidden w-60 shrink-0 lg:block">
       <div className="card sticky top-20 p-3">
-        <NavLink to="/deals" className="btn-primary mb-3 w-full">
+        <NavLink to="/app/deals" className="btn-primary mb-3 w-full">
           <Plus size={16} /> Быстрый ввод
         </NavLink>
         <nav className="space-y-1">
-          <NavLink to="/" className={item}>
+          <NavLink to="/app" end className={item}>
             <LayoutDashboard size={17} /> Дашборд
           </NavLink>
-          <NavLink to="/deals" className={item}>
+          <NavLink to="/app/deals" className={item}>
             <ArrowLeftRight size={17} /> Журнал сделок
           </NavLink>
-          <NavLink to="/contacts" className={item}>
+          <NavLink to="/app/contacts" className={item}>
             <Users size={17} /> Контрагенты
           </NavLink>
-          <NavLink to="/settings" className={item}>
+          <NavLink to="/app/settings" className={item}>
             <DatabaseBackup size={17} /> Импорт / Экспорт
           </NavLink>
         </nav>

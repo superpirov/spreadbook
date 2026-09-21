@@ -70,14 +70,11 @@ export default function HeroTicker() {
             Все работает на GitHub Pages — данные не покидают ваш браузер.
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
-            <a href="#/deals" className="btn-primary">
-              + Добавить сделку
+            <a href="#/login" className="btn-primary">
+              Войти и начать
             </a>
-            <a href="#/" className="btn-ghost" onClick={(e) => {
-              e.preventDefault()
-              document.getElementById('dashboard')?.scrollIntoView({ behavior: 'smooth' })
-            }}>
-              Смотреть аналитику
+            <a href="#features" className="btn-ghost">
+              Что умеет SpreadBook
             </a>
           </div>
           <div className="mt-5 grid max-w-md grid-cols-3 gap-3 text-center">
