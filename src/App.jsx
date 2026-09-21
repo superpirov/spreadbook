@@ -13,6 +13,7 @@ import Deals from './pages/Deals.jsx'
 import Contacts from './pages/Contacts.jsx'
 import Settings from './pages/Settings.jsx'
 import BillingPage from './pages/BillingPage.jsx'
+import Admin from './pages/Admin.jsx'
 
 // Public landing + login, cabinet (/app/*) behind auth gate + paywall.
 function CabinetLayout() {
@@ -87,6 +88,7 @@ export default function App() {
           <Route path="contacts" element={<Contacts />} />
           <Route path="settings" element={<Settings />} />
           <Route path="billing" element={<BillingPage />} />
+          <Route path="admin" element={<Admin />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

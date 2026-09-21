@@ -1,5 +1,7 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, ArrowLeftRight, Users, DatabaseBackup, Plus, Crown } from 'lucide-react'
+import { LayoutDashboard, ArrowLeftRight, Users, DatabaseBackup, Plus, Crown, ShieldCheck } from 'lucide-react'
+import { useAuth } from '../store/useAuth.js'
+import { isAdmin } from '../utils/admin.js'
 
 const item = ({ isActive }) =>
   `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
@@ -7,6 +9,8 @@ const item = ({ isActive }) =>
   }`
 
 export default function Sidebar() {
+  const user = useAuth((s) => s.user)
+  const admin = isAdmin(user)
   return (
     <aside className="hidden w-60 shrink-0 lg:block">
       <div className="card sticky top-20 p-3">
@@ -29,6 +33,11 @@ export default function Sidebar() {
           <NavLink to="/app/billing" className={item}>
             <Crown size={17} /> Тариф и оплата
           </NavLink>
+          {admin && (
+            <NavLink to="/app/admin" className={item}>
+              <ShieldCheck size={17} /> Админка
+            </NavLink>
+          )}
         </nav>
         <p className="mt-4 rounded-xl bg-white/[0.04] p-3 text-xs leading-relaxed text-slate-400">
           Все данные хранятся локально в браузере. Не забудьте сделать бэкап в разделе «Импорт / Экспорт».

@@ -65,7 +65,7 @@ const FAQ = [
   },
   {
     q: 'Сколько стоит?',
-    a: 'Первые 3 дня — полный доступ без оплаты. Далее PRO-подписка: 29 USDT в месяц с оплатой в USDT (сеть TRC-20). Проверка платежа автоматическая — по хешу транзакции.',
+    a: 'Первые 3 дня — полный доступ без оплаты. Далее PRO: 19 USDT в месяц или 132 USDT в год (выходит 11 USDT в месяц). Оплата в USDT (сеть TRC-20), проверка платежа автоматическая — по хешу транзакции.',
   },
 ]
 
@@ -114,7 +114,7 @@ export default function Landing() {
       <section id="pricing" className="scroll-mt-24">
         <p className="text-xs font-semibold uppercase tracking-widest text-brand-soft">Тарифы</p>
         <h2 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">Три дня — бесплатно, дальше — PRO</h2>
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
           <div className="card p-6">
             <h3 className="font-bold text-mint-soft">Пробный доступ</h3>
             <div className="mt-2 text-3xl font-extrabold">0 USDT <span className="text-sm font-medium text-slate-400">/ 3 дня</span></div>
@@ -125,11 +125,22 @@ export default function Landing() {
             </ul>
             <Link to="/login" className="btn-ghost mt-5 w-full">Попробовать</Link>
           </div>
-          <div className="card border-amber-400/30 bg-gradient-to-br from-amber-400/10 to-transparent p-6">
-            <h3 className="font-bold text-amber-200">PRO</h3>
-            <div className="mt-2 text-3xl font-extrabold">29 USDT <span className="text-sm font-medium text-slate-400">/ 30 дней</span></div>
+          <div className="card p-6">
+            <h3 className="font-bold text-slate-200">PRO на месяц</h3>
+            <div className="mt-2 text-3xl font-extrabold">19 USDT <span className="text-sm font-medium text-slate-400">/ 30 дней</span></div>
             <ul className="mt-4 space-y-2 text-sm text-slate-300">
-              {['Всё из пробного, без лимита по времени', 'Оплата в USDT, сеть TRC-20', 'Автопроверка платежа по TXID'].map((t) => (
+              {['Всё без ограничений', 'Оплата в USDT, сеть TRC-20', 'Автопроверка платежа по TXID'].map((t) => (
+                <li key={t} className="flex items-center gap-2"><Check size={15} className="text-mint-soft" />{t}</li>
+              ))}
+            </ul>
+            <Link to="/login" className="btn-ghost mt-5 w-full">Начать с триала</Link>
+          </div>
+          <div className="card border-amber-400/30 bg-gradient-to-br from-amber-400/10 to-transparent p-6">
+            <h3 className="font-bold text-amber-200">PRO на год <span className="ml-1 rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-bold text-black">−42%</span></h3>
+            <div className="mt-2 text-3xl font-extrabold">132 USDT <span className="text-sm font-medium text-slate-400">/ год</span></div>
+            <div className="text-xs text-slate-400">≈ 11 USDT в месяц вместо 19</div>
+            <ul className="mt-4 space-y-2 text-sm text-slate-300">
+              {['Всё без ограничений на 365 дней', 'Оплата в USDT, сеть TRC-20', 'Автопроверка платежа по TXID'].map((t) => (
                 <li key={t} className="flex items-center gap-2"><Check size={15} className="text-amber-300" />{t}</li>
               ))}
             </ul>

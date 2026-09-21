@@ -76,7 +76,7 @@ export default function Login() {
           Ваш кабинет <span className="bg-gradient-to-r from-brand-soft to-mint-soft bg-clip-text text-transparent">под защитой</span>
         </h1>
         <ul className="mt-4 space-y-2 text-sm text-slate-400">
-          {['Первые 3 дня — полный доступ без оплаты', 'Далее PRO — 29 USDT в месяц (TRC-20)', 'Сделки, аналитика и CRM контрагентов'].map((t) => (
+          {['Первые 3 дня — полный доступ без оплаты', 'Далее PRO — 19 USDT/мес или 132 USDT/год', 'Сделки, аналитика и CRM контрагентов'].map((t) => (
             <li key={t} className="flex items-center gap-2">
               <span className="grid h-5 w-5 place-items-center rounded-full bg-mint/20 text-[11px] text-mint-soft">✓</span>
               {t}

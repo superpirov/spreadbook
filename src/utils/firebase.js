@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
+import { getFirestore } from 'firebase/firestore'
 
 // Public web config (safe to commit: Firebase Auth is secured by
 // Authorized domains + provider settings, not by the apiKey).
@@ -16,3 +17,4 @@ const firebaseConfig = {
 
 export const firebaseApp = initializeApp(firebaseConfig)
 export const auth = getAuth(firebaseApp)
+export const db = getFirestore(firebaseApp)

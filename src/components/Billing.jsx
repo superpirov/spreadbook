@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Copy, Check, Crown, Clock, ExternalLink, Loader2, ShieldCheck } from 'lucide-react'
 import { useAuth, useCurrentSub } from '../store/useAuth.js'
-import { BILLING, getAccessState, trialEndDate, verifyUsdtPayment, tronscanUrl } from '../utils/billing.js'
+import { BILLING, PLANS, getPlan, getAccessState, trialEndDate, verifyUsdtPayment, tronscanUrl } from '../utils/billing.js'
 import { formatDate } from '../utils/formatters.js'
 
 export function StatusBadge() {
@@ -31,6 +31,8 @@ export default function Billing({ compact = false }) {
   const sub = useCurrentSub()
   const activatePro = useAuth((s) => s.activatePro)
   const st = getAccessState(sub)
+  const [planId, setPlanId] = useState('monthly')
+  const plan = getPlan(planId)
   const [tx, setTx] = useState(sub?.txHash || '')
   const [checking, setChecking] = useState(false)
   const [msg, setMsg] = useState(null) // { ok, text }
@@ -56,9 +58,9 @@ export default function Billing({ compact = false }) {
     setChecking(true)
     setMsg(null)
     try {
-      await verifyUsdtPayment(tx)
-      activatePro(tx.trim())
-      setMsg({ ok: true, text: 'Оплата подтверждена в сети Tron. PRO активирован — приятной торговли!' })
+      await verifyUsdtPayment(tx, planId)
+      await activatePro(tx.trim(), plan)
+      setMsg({ ok: true, text: `Оплата подтверждена в сети Tron. ${plan.title} активирован — приятной торговли!` })
     } catch (err) {
       setMsg({ ok: false, text: err.message })
     } finally {
@@ -79,16 +81,37 @@ export default function Billing({ compact = false }) {
       </div>
 
       <div className="card bg-gradient-to-br from-amber-400/10 via-ink-900 to-brand/10 p-5">
-        <h3 className="flex items-center gap-2 font-bold"><Crown size={17} className="text-amber-300" /> Тариф PRO — {BILLING.price} {BILLING.asset} / {BILLING.periodDays} дней</h3>
+        <h3 className="flex items-center gap-2 font-bold"><Crown size={17} className="text-amber-300" /> Тариф PRO</h3>
         <p className="mt-1 text-sm text-slate-400">
           Полный доступ ко всем возможностям сервиса: сделки без ограничений, аналитика, CRM контрагентов, импорт/экспорт.
         </p>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          {PLANS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => { setPlanId(p.id); setMsg(null) }}
+              className={`relative rounded-2xl border p-4 text-left transition ${
+                planId === p.id ? 'border-amber-400/60 bg-amber-400/10 shadow-glow' : 'border-white/10 bg-white/[0.03] hover:border-white/25'
+              }`}
+            >
+              {p.badge && (
+                <span className="absolute -top-2.5 right-3 rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-bold text-black">{p.badge}</span>
+              )}
+              <div className="text-sm font-bold">{p.title}</div>
+              <div className="mt-1 text-2xl font-extrabold">{p.price} {BILLING.asset}</div>
+              <div className="text-xs text-slate-400">≈ {p.perMonth} {BILLING.asset}/мес · {p.days} дней</div>
+            </button>
+          ))}
+        </div>
+
         {!compact && (
           <ol className="mt-4 space-y-3 text-sm">
             <li className="flex gap-3">
               <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand/30 text-xs font-bold">1</span>
               <div className="flex-1">
-                <p className="text-slate-300">Отправьте ровно <b className="text-white">{BILLING.price} {BILLING.asset}</b> на кошелёк в сети <b className="text-white">{BILLING.network}</b>:</p>
+                <p className="text-slate-300">Отправьте ровно <b className="text-white">{plan.price} {BILLING.asset}</b> ({plan.title.toLowerCase()}) на кошелёк в сети <b className="text-white">{BILLING.network}</b>:</p>
                 <div className="mt-2 flex items-center gap-2 rounded-xl border border-white/10 bg-ink-950/70 px-3 py-2.5">
                   <code className="min-w-0 flex-1 break-all text-xs text-emerald-200">{BILLING.wallet}</code>
                   <button onClick={copyWallet} className="btn-ghost shrink-0 px-2.5 py-1.5 text-xs" title="Скопировать адрес">

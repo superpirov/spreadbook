@@ -49,13 +49,36 @@ npm run deploy
 
 ## Оплата (BILLING)
 
-Модель: 3 дня триала с момента первого входа, далее PRO-подписка — 29 USDT / 30 дней.
+Модель: 3 дня триала с момента первого входа, далее PRO — 19 USDT / 30 дней или 132 USDT / 365 дней (≈11 USDT/мес).
 
-- Настройки в `src/utils/billing.js`: `BILLING.wallet` (TRC-20 адрес), `BILLING.price`, `BILLING.periodDays`, `BILLING.trialDays`.
+- Настройки в `src/utils/billing.js`: `BILLING.wallet` (TRC-20 адрес), `PLANS` (цены/сроки), `BILLING.trialDays`.
 - Пользователь отправляет USDT (TRC-20) на кошелёк и вставляет TXID на странице `/app/billing`.
 - Проверка ончейн: `verifyUsdtPayment()` опрашивает Tronscan public API (`transaction-info`), сверяет получателя, USDT-контракт `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t`, сумму ≥ цены и подтверждение сети.
 - Состояние подписки (`trialStart / plan / expiresAt`) — в `useAuth`, гейт — в `CabinetLayout` (App.jsx). Просрочка закрывает разделы кабинета пейволлом, страница оплаты остаётся доступна.
 - Ограничение: enforcement клиентский (localStorage). Строгая защита — бэкенд-воркер с проверкой Trongrid (бэклог).
+
+## Админка и Firestore (реестр пользователей)
+
+Подписки зеркалируются в Firestore (`users/{uid}`), админка — `/app/admin` (доступ только для email из `ADMIN_EMAILS` в `src/utils/admin.js`).
+
+Включение (в Firebase Console):
+1. Build → Firestore Database → Create database → Production mode → Enable.
+2. Вкладка Rules → вставить ниже, заменив `OWNER@MAIL` на свой email → Publish.
+3. В `src/utils/admin.js` вписать тот же email в `ADMIN_EMAILS`, запушить.
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if request.auth != null && request.auth.token.email == 'OWNER@MAIL';
+    }
+  }
+}
+```
+
+Без включённого Firestore приложение работает в локальном режиме (подписки только в браузере), админка покажет подсказку.
 
 ## Модель прибыли (MVP)
 

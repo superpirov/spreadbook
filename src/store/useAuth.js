@@ -9,7 +9,8 @@ import {
   updateProfile,
 } from 'firebase/auth'
 import { auth } from '../utils/firebase.js'
-import { BILLING } from '../utils/billing.js'
+import { getPlan } from '../utils/billing.js'
+import { ensureUserDoc, saveSubToCloud } from '../utils/users.js'
 
 // Real Firebase Authentication (email/password).
 // Trial/pro subscription is keyed by Firebase uid, so different users on one
@@ -33,7 +34,36 @@ const toUser = (fb) => ({
   name: fb.displayName || (fb.email || '').split('@')[0],
 })
 
-// One-time migration of the old local-mode trial (spreadbook-auth-v1).
+// Adopt cloud billing state into the local cache (cloud wins when it has data).
+function adoptCloud(s, uid, cloud) {
+  if (!cloud) return s
+  const local = s.subs[uid]
+  const merged = {
+    plan: cloud.plan || local?.plan || 'trial',
+    planId: cloud.planId || local?.planId || null,
+    // Earliest trial start wins (never shorten an existing trial silently).
+    trialStart: earliest(local?.trialStart, cloud.trialStart) || new Date().toISOString(),
+    txHash: cloud.txHash || local?.txHash || null,
+    paidAt: cloud.paidAt || local?.paidAt || null,
+    expiresAt: cloud.expiresAt || local?.expiresAt || null,
+  }
+  return { subs: { ...s.subs, [uid]: merged } }
+}
+
+function earliest(a, b) {
+  if (a && b) return new Date(a) < new Date(b) ? a : b
+  return a || b || null
+}
+
+// Sync user doc with Firestore in background (no-op when Firestore/rules fail).
+async function syncCloud(user, get, set) {
+  try {
+    const cloud = await ensureUserDoc(user)
+    if (cloud) set((s) => adoptCloud(s, user.id, cloud))
+  } catch {
+    /* local-only mode */
+  }
+}
 function readLegacyTrial(email) {
   try {
     const raw = localStorage.getItem('spreadbook-auth-v1')
@@ -74,6 +104,7 @@ export const useAuth = create(
           } else {
             set({ user, authReady: true })
           }
+          syncCloud(user, get, set)
         })
       },
 
@@ -83,10 +114,12 @@ export const useAuth = create(
         const displayName = String(name || '').trim() || clean.split('@')[0]
         await updateProfile(cred.user, { displayName })
         const s = get()
+        const user = { id: cred.user.uid, email: clean, name: displayName }
         set({
-          user: { id: cred.user.uid, email: clean, name: displayName },
+          user,
           subs: { ...s.subs, [cred.user.uid]: s.subs[cred.user.uid] || readLegacyTrial(clean) || freshSub() },
         })
+        syncCloud(user, get, set)
       },
 
       login: async (email, password) => {
@@ -98,6 +131,7 @@ export const useAuth = create(
           user,
           subs: { ...s.subs, [user.id]: s.subs[user.id] || readLegacyTrial(clean) || freshSub() },
         })
+        syncCloud(user, get, set)
       },
 
       resetPassword: (email) => sendPasswordResetEmail(auth, String(email || '').trim()),
@@ -107,24 +141,26 @@ export const useAuth = create(
         set({ user: null })
       },
 
-      activatePro: (txHash, periodDays = BILLING.periodDays) =>
-        set((s) => {
-          if (!s.user) return s
-          const id = s.user.id
-          const cur = s.subs[id] || freshSub()
-          return {
-            subs: {
-              ...s.subs,
-              [id]: {
-                ...cur,
-                plan: 'pro',
-                txHash,
-                paidAt: new Date().toISOString(),
-                expiresAt: new Date(Date.now() + periodDays * DAY).toISOString(),
-              },
-            },
-          }
-        }),
+      activatePro: async (txHash, plan = getPlan('monthly')) => {
+        const s = get()
+        if (!s.user) return
+        const id = s.user.id
+        const cur = s.subs[id] || freshSub()
+        const next = {
+          ...cur,
+          plan: 'pro',
+          planId: plan.id,
+          txHash,
+          paidAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + plan.days * DAY).toISOString(),
+        }
+        set({ subs: { ...s.subs, [id]: next } })
+        try {
+          await saveSubToCloud(id, next)
+        } catch {
+          /* local cache kept; cloud sync retries on next login */
+        }
+      },
     }),
     {
       name: 'spreadbook-auth-v2',
