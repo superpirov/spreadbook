@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ShieldCheck, ShieldAlert, ShieldQuestion, RefreshCw, ExternalLink, Trash2, ScanSearch, Database, Copy, Check, Search, Flag } from 'lucide-react'
 import { useStore } from '../store/useStore.js'
@@ -16,6 +16,7 @@ import {
   checkTronSecurity,
   getCanonical,
   getCommunityIndex,
+  getStaticIndex,
   saveCommunityIndex,
   findRecentCheck,
   explorerUrl,
@@ -36,6 +37,8 @@ export default function Aml() {
 
   const [lists, setLists] = useState(() => getCachedLists())
   const [community, setCommunity] = useState(() => getCommunityIndex())
+  // Static enforcement pack sits UNDER the nightly OFAC index (OFAC wins).
+  const lookupIndex = useMemo(() => ({ ...getStaticIndex().index, ...(lists?.index || {}) }), [lists])
   const [refreshing, setRefreshing] = useState(false)
   const [refreshMsg, setRefreshMsg] = useState('')
   const [addr, setAddr] = useState('')
@@ -154,7 +157,7 @@ export default function Aml() {
     setChecking(true)
     setDeepStage('')
     try {
-      const base = checkAddress(a, idx.index, community.index)
+      const base = checkAddress(a, lookupIndex, community.index)
       // Canonical contracts skip live/security checks — their flags are meaningless.
       const canonical = getCanonical(a)
       const { frozen, error: rpcError } = (!canonical && (base.network === 'evm' || base.network === 'tron'))
@@ -173,7 +176,7 @@ export default function Aml() {
         } else {
           setDeepStage('Собираю историю транзакций…')
           try {
-            r.kyt = await analyzeKyt(a, idx.index, { verdict, matches, frozen }, {
+            r.kyt = await analyzeKyt(a, lookupIndex, { verdict, matches, frozen }, {
               depth,
               community: community.index,
               onProgress: ({ stage, done, total }) => setDeepStage(total > 1 ? `${stage} (${done}/${total})` : stage),
@@ -220,6 +223,9 @@ export default function Aml() {
             ))}
             <span className="rounded-lg bg-brand/15 px-2 py-1 text-brand-soft" title="Метки сообщества (модерируются)">
               👥 сообщество: {(community.total ?? 0).toLocaleString('ru-RU')}
+            </span>
+            <span className="rounded-lg bg-white/5 px-2 py-1 text-slate-400" title="Верифицированные адреса из судебных дел (встроены)">
+              ⚖️ судебки: {getStaticIndex().total}
             </span>
           </div>
         ) : (

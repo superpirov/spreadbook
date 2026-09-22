@@ -1,0 +1,44 @@
+[
+  {
+    "address": "1BFFuA1naxhQjJxdoJ5LCx3Za4dfZ8uKjk",
+    "network": "btc",
+    "case": "chipmixer",
+    "label": "ChipMixer — кошелёк оператора (жалоба DOJ, 03.2023)",
+    "source": "DOJ complaint 2:23-mj-00528 (Binance records)"
+  },
+  {
+    "address": "15Nu61zbR1z8tMf6KrD8ekW7mVnhC1c6b2",
+    "network": "btc",
+    "case": "chipmixer",
+    "label": "ChipMixer — кошелёк оператора, кластер 80+ адресов (жалоба DOJ, 03.2023)",
+    "source": "DOJ complaint 2:23-mj-00528 (co-spending cluster)"
+  },
+  {
+    "address": "0xf2dca3ddeec78dae2c9cc7686a1f46cab38b2cf8",
+    "network": "evm",
+    "case": "chipmixer",
+    "label": "ChipMixer — ETH-кошелёк оператора (жалоба DOJ, 03.2023)",
+    "source": "DOJ complaint 2:23-mj-00528 (Binance records)"
+  },
+  {
+    "address": "TQ9xHTP8gv3QuwdrH3D2LMpZCPqcX9SdYG",
+    "network": "tron",
+    "case": "chipmixer",
+    "label": "ChipMixer — TRON-кошелёк оператора (жалоба DOJ, 03.2023)",
+    "source": "DOJ complaint 2:23-mj-00528 (Binance records)"
+  },
+  {
+    "address": "TPsjfDqBBXoMfHSbUWMqMAW9RktbGrCyCH",
+    "network": "tron",
+    "case": "huione",
+    "label": "Huione Group — депозит, FinCEN Sanctioned (2025)",
+    "source": "BlockSec Phalcon compliance report (TRON)"
+  },
+  {
+    "address": "TQuFSvpct2FeBrKjRh8NDqtGAci2Z15RSa",
+    "network": "tron",
+    "case": "huione",
+    "label": "Huione Group — депозит, FinCEN Sanctioned (2025)",
+    "source": "BlockSec Phalcon compliance report (TRON)"
+  }
+]

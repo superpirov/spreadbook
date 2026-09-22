@@ -1,4 +1,5 @@
 import bs58 from 'bs58'
+import SEIZURES from '../data/seizures.json'
 
 // Local AML screening engine.
 //
@@ -164,7 +165,32 @@ function indexKeysForLine(line) {
 
 export function sourceLabel(id) {
   if (id === 'TETHER_FROZEN') return 'Tether freeze (USDT)'
-  return AML_SOURCES.find((s) => s.id === id)?.label || id
+  if (id === 'COMMUNITY') return 'Жалоба сообщества'
+  const ofac = AML_SOURCES.find((s) => s.id === id)
+  if (ofac) return ofac.label
+  if (id && id.startsWith('SEIZURE_')) return STATIC_LABELS[id] || 'Судебное дело'
+  return id
+}
+
+// Static enforcement pack (src/data/seizures.json): verified non-OFAC seeds.
+// Merged UNDER the nightly OFAC index (OFAC wins on key conflicts).
+const STATIC_LABELS = {}
+let staticCache = null
+
+export function getStaticIndex() {
+  if (staticCache) return staticCache
+  const index = {}
+  for (const e of SEIZURES) {
+    const a = String(e.address || '').trim()
+    if (!a) continue
+    const sid = `SEIZURE_${String(e.case || 'case').toUpperCase()}`
+    STATIC_LABELS[sid] = e.label || 'Судебное дело'
+    for (const key of indexKeysForLine(a)) {
+      if (!(key in index)) index[key] = sid
+    }
+  }
+  staticCache = { index, total: Object.keys(index).length }
+  return staticCache
 }
 
 // Canonical allowlist: well-known legitimate contracts that must NEVER be

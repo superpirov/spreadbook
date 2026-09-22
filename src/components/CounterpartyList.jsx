@@ -13,6 +13,7 @@ import {
   checkTronSecurity,
   getCanonical,
   getCommunityIndex,
+  getStaticIndex,
   findRecentCheck,
   checksUsedToday,
 } from '../utils/aml.js'
@@ -93,6 +94,7 @@ export default function CounterpartyList() {
       let idx = getCachedLists()
       if (!idx) idx = await refreshLists()
       const comm = getCommunityIndex().index
+      const lookup = { ...getStaticIndex().index, ...idx.index }
       const out = []
       for (const a of addrs) {
         // Fresh cached verdict — free, no quota spent.
@@ -101,7 +103,7 @@ export default function CounterpartyList() {
           out.push({ ...recent })
           continue
         }
-        const base = checkAddress(a, idx.index, comm)
+        const base = checkAddress(a, lookup, comm)
         const canonical = getCanonical(a)
         const { frozen, error: rpcError } = (!canonical && (base.network === 'evm' || base.network === 'tron'))
           ? await checkTetherFrozen(a)
