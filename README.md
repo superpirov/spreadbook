@@ -108,7 +108,7 @@ service cloud.firestore {
 - Кэш вердиктов 24 ч (`findRecentCheck`): повторная проверка того же адреса API не опрашивает, в дневной лимит не считается. Константа `CHECK_CACHE_HOURS`.
 - Allowlist канонических контрактов (`getCanonical`): официальный USDT TRC-20/ERC-20 и USDC ERC-20 никогда не флагуются — Tronscan отдаёт `is_black_list=true` на сам контракт USDT, т.к. токен администрирует чёрный список, а не заблокирован.
 - Краудсорсинг: кнопка «Пожаловаться» в результате проверки → коллекция `reports` (pending → модерация в `/app/admin` → approved). Одобренные метки (`saveCommunityIndex`) подмешиваются в каждую проверку и BFS-обход как источник COMMUNITY. Правила для `reports` — в блоке rules выше.
-- bitcoinabuse.com для BTC: `checkBitcoinAbuse` (нужен `BITCOINABUSE_KEY` в `aml.js`, бесплатный ключ) — жалобы на скам/вымогательство идут в вердикт.
+- ChainAbuse (TRM Labs): `checkChainAbuse` — жалобы victims/инвестигаторов (категории PHISHING/RUG_PULL/…, флаги trusted/checked) для всех сетей, ключ `CHAINABUSE_KEY` (Basic auth). ВНИМАНИЕ: стандартный бесплатный ключ — всего 10 запр/мес; для объёма нужна партнёрская квота (chainabuse.com/partner-contact). Кэш 24 ч и дневные лимиты берегут квоту.
 - Вердикты: `bad` (совпадение/фриз), `clean`, `unknown`. Лейблы Etherscan/Tronscan бесплатно по API не отдаются — в результате ссылка для ручной сверки.
 - История в `users/{uid}/amlchecks` (realtime, лимит 100), риск-бейдж контакта (`amlStatus`) в документе контакта.
 - Лимиты: триал — 3 проверки/день (считается по истории, сквозит между устройствами), PRO — безлимит. Константа `TRIAL_CHECKS_PER_DAY` в `aml.js`.

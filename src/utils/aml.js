@@ -27,9 +27,11 @@ export const TRIAL_CHECKS_PER_DAY = 3
 export const CHECK_CACHE_HOURS = 24
 const COMMUNITY_KEY = 'spreadbook-community-v1'
 
-// Owner's bitcoinabuse.com API key (free, get at bitcoinabuse.com).
-// PUBLIC BY DESIGN like the Tronscan key: read-only abuse stats.
-export const BITCOINABUSE_KEY = ''
+// Owner's ChainAbuse API key (free account: chainabuse.com → profile → API key).
+// PUBLIC BY DESIGN like other keys here: screening is read-only.
+// NOTE: standard keys are limited to 10 calls/month — for serious volume
+// apply for partner access (chainabuse.com/partner-contact, business email).
+export const CHAINABUSE_KEY = ''
 
 // Owner's Tronscan API key — PUBLIC BY DESIGN (shipped in frontend JS).
 // Risk is limited: read-only data API, no funds access. If the quota gets
@@ -227,22 +229,43 @@ export function saveCommunityIndex(entries) {
   return data
 }
 
-// --- bitcoinabuse.com (BTC only, needs BITCOINABUSE_KEY) ---
-// Returns { count, error }. count > 0 = reported as scam/ransomware/etc.
+// --- ChainAbuse (TRM Labs) screening: crowdsourced scam reports ---
+// GET https://api.chainabuse.com/v0/reports?address=&chain= with HTTP Basic
+// auth (API key as username AND password). Multi-chain: TRON/ETH/BTC/...
+// Returns { count, categories[], trusted, checked, error }.
 
-export async function checkBitcoinAbuse(rawAddress) {
+const CHAINABUSE_CHAINS = { tron: 'TRON', evm: 'ETH', btc: 'BTC', ltc: 'LITECOIN', sol: 'SOL' }
+
+export async function checkChainAbuse(rawAddress) {
   const a = String(rawAddress || '').trim()
-  if (detectNetwork(a) !== 'btc') return { count: 0, error: null }
-  if (!BITCOINABUSE_KEY) return { count: 0, error: 'Нет ключа bitcoinabuse' }
+  const net = detectNetwork(a)
+  const chain = CHAINABUSE_CHAINS[net]
+  if (!chain) return { count: 0, categories: [], trusted: 0, checked: 0, error: null }
+  if (!CHAINABUSE_KEY) return { count: 0, categories: [], trusted: 0, checked: 0, error: 'Нет ключа ChainAbuse' }
   try {
     const res = await fetch(
-      `https://www.bitcoinabuse.com/api/reports/check?address=${encodeURIComponent(a)}&api_token=${BITCOINABUSE_KEY}`,
+      `https://api.chainabuse.com/v0/reports?address=${encodeURIComponent(a)}&chain=${chain}&perPage=50`,
+      { headers: { Authorization: 'Basic ' + btoa(`${CHAINABUSE_KEY}:${CHAINABUSE_KEY}`) } },
     )
-    if (!res.ok) return { count: 0, error: `bitcoinabuse: HTTP ${res.status}` }
+    if (res.status === 401 || res.status === 403) {
+      return { count: 0, categories: [], trusted: 0, checked: 0, error: 'ChainAbuse: ключ отклонён (401/403)' }
+    }
+    if (res.status === 429) {
+      return { count: 0, categories: [], trusted: 0, checked: 0, error: 'ChainAbuse: квота исчерпана (429) — лимит стандартного ключа 10 запр/мес' }
+    }
+    if (!res.ok) return { count: 0, categories: [], trusted: 0, checked: 0, error: `ChainAbuse: HTTP ${res.status}` }
     const j = await res.json()
-    return { count: Number(j?.count || 0), error: null }
+    const reports = Array.isArray(j?.reports) ? j.reports : []
+    const cats = [...new Set(reports.map((r) => r?.scamCategory).filter(Boolean))]
+    return {
+      count: Number(j?.count ?? reports.length) || 0,
+      categories: cats,
+      trusted: reports.filter((r) => r?.trusted).length,
+      checked: reports.filter((r) => r?.checked).length,
+      error: null,
+    }
   } catch {
-    return { count: 0, error: 'bitcoinabuse: сеть' }
+    return { count: 0, categories: [], trusted: 0, checked: 0, error: 'ChainAbuse: сеть/CORS' }
   }
 }
 
