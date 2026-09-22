@@ -46,8 +46,7 @@ export default function Aml() {
   const [checking, setChecking] = useState(false)
   const [result, setResult] = useState(null) // { address, network, verdict, matches, frozen, kyt? }
   const [error, setError] = useState('')
-  const [mode, setMode] = useState('quick') // quick | deep (KYT-лайт, пока только TRON)
-  const [depth, setDepth] = useState(1) // BFS depth for deep mode
+  const [depth, setDepth] = useState(1) // BFS depth for TRON risk analysis
   const [deepStage, setDeepStage] = useState('')
   const [copiedId, setCopiedId] = useState(null)
   const [showReport, setShowReport] = useState(false)
@@ -133,9 +132,10 @@ export default function Aml() {
     const a = addr.trim()
     if (!a) return
     // Fresh cached verdict — instant, free, no quota spent.
-    // Deep mode reuses cache only if the cached report is at least as deep.
+    // TRON reuses cache only if the cached report is at least as deep.
     const recent = findRecentCheck(amlHistory, a)
-    if (recent && (mode === 'quick' || (recent.kyt && (recent.kyt.depth || 1) >= depth))) {
+    const net0 = detectNetwork(a)
+    if (recent && (net0 !== 'tron' || ((recent.kyt?.depth || 0) >= depth))) {
       setResult({ ...recent, cached: true })
       return
     }
@@ -175,26 +175,22 @@ export default function Aml() {
       if (tronRisk === true) matches.push({ source: 'TRONSCAN_RISK', label: 'Tronscan: risk-флаг' })
       const verdict = matches.length > 0 ? 'bad' : base.verdict
       const r = { address: base.address, network: base.network, verdict, matches, frozen, tags: tronTags, rpcError: rpcError || '', secError: secError || '', canonical: canonical || '', cached: false, kyt: null }
-      if (mode === 'deep') {
-        if (base.network !== 'tron') {
-          setError('Глубокая проверка (KYT-лайт) пока работает только для сети TRON. Для этого адреса доступна быстрая проверка.')
-        } else {
-          setDeepStage('Собираю историю транзакций…')
-          try {
-            r.kyt = await analyzeKyt(a, lookupIndex, { verdict, matches, frozen }, {
-              depth,
-              community: community.index,
-              onProgress: ({ stage, done, total }) => setDeepStage(total > 1 ? `${stage} (${done}/${total})` : stage),
-            })
-            if (r.kyt.score >= 51 && r.verdict === 'clean') r.verdict = 'bad'
-          } catch (e) {
-            setError('Не удалось собрать ончейн-данные для KYT (Tronscan недоступен). Показан результат быстрой проверки.')
-          }
-          setDeepStage('')
+      if (base.network === 'tron') {
+        setDeepStage('Собираю историю транзакций…')
+        try {
+          r.kyt = await analyzeKyt(a, lookupIndex, { verdict, matches, frozen }, {
+            depth,
+            community: community.index,
+            onProgress: ({ stage, done, total }) => setDeepStage(total > 1 ? `${stage} (${done}/${total})` : stage),
+          })
+          if (r.kyt.score >= 51 && r.verdict === 'clean') r.verdict = 'bad'
+        } catch (e) {
+          setError('Не удалось собрать ончейн-данные для анализа (Tronscan недоступен). Показан результат скрининга.')
         }
+        setDeepStage('')
       }
       setResult(r)
-      await logAmlCheck({ address: r.address, network: r.network, verdict: r.verdict, matches, frozen, tags: r.tags, depth: mode === 'deep' ? depth : 0, counterparty: '', kyt: r.kyt })
+      await logAmlCheck({ address: r.address, network: r.network, verdict: r.verdict, matches, frozen, tags: r.tags, depth: base.network === 'tron' ? depth : 0, counterparty: '', kyt: r.kyt })
     } finally {
       setChecking(false)
       setDeepStage('')
@@ -249,39 +245,22 @@ export default function Aml() {
             {isPro ? 'PRO: безлимит' : `Триал: использовано ${usedToday}/${TRIAL_CHECKS_PER_DAY} сегодня`}
           </span>
         </div>
-        <div className="mt-3 flex rounded-xl bg-ink-950 p-1 text-sm font-semibold">
-          {[
-            ['quick', 'Быстрая проверка'],
-            ['deep', 'Глубокая (KYT-лайт · TRON)'],
-          ].map(([m, label]) => (
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-semibold uppercase tracking-wide text-slate-400">Глубина обхода (TRON):</span>
+          {[1, 2, 3, 4, 5].map((d) => (
             <button
-              key={m}
+              key={d}
               type="button"
-              onClick={() => { setMode(m); setResult(null); setError('') }}
-              className={`flex-1 rounded-lg px-3 py-1.5 transition ${mode === m ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+              onClick={() => setDepth(d)}
+              className={`rounded-xl px-3 py-1.5 font-bold transition ${depth === d ? 'bg-gradient-to-r from-brand to-brand-soft text-white shadow-glow' : 'bg-white/5 text-slate-300 hover:bg-white/10'}`}
             >
-              {label}
+              {d} хоп{d === 1 ? '' : 'а'}
             </button>
           ))}
+          <span className="text-slate-500">
+            {depth === 1 ? 'секунды' : depth === 2 ? 'до ~1 минуты' : depth === 3 ? 'до ~2–3 минут' : 'долго, больше шума'}
+          </span>
         </div>
-        {mode === 'deep' && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-            <span className="font-semibold uppercase tracking-wide text-slate-400">Глубина обхода:</span>
-            {[1, 2, 3, 4, 5].map((d) => (
-              <button
-                key={d}
-                type="button"
-                onClick={() => setDepth(d)}
-                className={`rounded-xl px-3 py-1.5 font-bold transition ${depth === d ? 'bg-gradient-to-r from-brand to-brand-soft text-white shadow-glow' : 'bg-white/5 text-slate-300 hover:bg-white/10'}`}
-              >
-                {d} хоп{d === 1 ? '' : 'а'}
-              </button>
-            ))}
-            <span className="text-slate-500">
-              {depth === 1 ? 'секунды' : depth === 2 ? 'до ~1 минуты' : depth === 3 ? 'до ~2–3 минут' : 'долго, больше шума'}
-            </span>
-          </div>
-        )}
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <input
             className="input font-mono text-xs"
@@ -303,6 +282,9 @@ export default function Aml() {
           </p>
         )}
         {result && <VerdictCard r={result} />}
+        {result && !result.kyt && result.network !== 'tron' && result.verdict !== 'unknown' && (
+          <p className="mt-2 text-xs text-slate-500">Детальный разбор с графом связей доступен только для TRON — для остальных сетей показан скрининг по спискам и фризам.</p>
+        )}
         {result?.kyt && <KytReport address={result.address} kyt={result.kyt} />}
         {result && result.verdict !== 'unknown' && (
           <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
@@ -409,7 +391,7 @@ export function KytReport({ address, kyt }) {
           <text x="44" y="50" textAnchor="middle" fill="#fff" fontSize="20" fontWeight="800">{kyt.score}</text>
         </svg>
         <div className="min-w-0 flex-1">
-          <div className="font-bold">KYT-лайт: {lvl.label} ({kyt.score}/100)</div>
+          <div className="font-bold">Риск-анализ: {lvl.label} ({kyt.score}/100)</div>
           <code className="block truncate font-mono text-xs text-slate-400" title={address}>{address}</code>
           <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-slate-400 sm:grid-cols-3">
             <span>Возраст: {kyt.stats.ageDays !== null ? `${kyt.stats.ageDays} дн.` : '—'}</span>
@@ -472,7 +454,7 @@ export function KytReport({ address, kyt }) {
           </div>
         </div>
       )}
-      <p className="mt-2 text-[11px] text-slate-500">KYT-лайт: прямые связи (1 хоп) + поведение. Полный графовый анализ — в следующих версиях.</p>
+      <p className="mt-2 text-[11px] text-slate-500">Риск-анализ: прямые и дальние связи + поведение. Полный графовый анализ — в следующих версиях.</p>
     </div>
   )
 }
