@@ -17,6 +17,7 @@ import {
   explorerUrl,
   checksUsedToday,
 } from '../utils/aml.js'
+import { analyzeKyt, KYT_LEVEL } from '../utils/kyt.js'
 import { formatDateTime } from '../utils/formatters.js'
 
 const NET_NAMES = { tron: 'TRON', evm: 'EVM (ETH/BSC/…)', btc: 'Bitcoin', ltc: 'Litecoin', sol: 'Solana', unknown: 'не распознана' }
@@ -33,8 +34,10 @@ export default function Aml() {
   const [refreshMsg, setRefreshMsg] = useState('')
   const [addr, setAddr] = useState('')
   const [checking, setChecking] = useState(false)
-  const [result, setResult] = useState(null) // { address, network, verdict, matches, frozen }
+  const [result, setResult] = useState(null) // { address, network, verdict, matches, frozen, kyt? }
   const [error, setError] = useState('')
+  const [mode, setMode] = useState('quick') // quick | deep (KYT-лайт, пока только TRON)
+  const [deepStage, setDeepStage] = useState('')
 
   useEffect(() => {
     if (!getCachedLists()) {
@@ -71,7 +74,7 @@ export default function Aml() {
     if (!a) return
     // Fresh cached verdict — instant, free, no quota spent.
     const recent = findRecentCheck(amlHistory, a)
-    if (recent) {
+    if (recent && (mode === 'quick' || recent.kyt)) {
       setResult({ ...recent, cached: true })
       return
     }
@@ -92,6 +95,7 @@ export default function Aml() {
       }
     }
     setChecking(true)
+    setDeepStage('')
     try {
       const base = checkAddress(a, idx.index)
       const { frozen, error: rpcError } = (base.network === 'evm' || base.network === 'tron')
@@ -103,11 +107,26 @@ export default function Aml() {
       const matches = [...base.matches, ...secFlags]
       if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
       const verdict = matches.length > 0 ? 'bad' : base.verdict
-      const r = { address: base.address, network: base.network, verdict, matches, frozen, rpcError: rpcError || '', secError: secError || '', cached: false }
+      const r = { address: base.address, network: base.network, verdict, matches, frozen, rpcError: rpcError || '', secError: secError || '', cached: false, kyt: null }
+      if (mode === 'deep') {
+        if (base.network !== 'tron') {
+          setError('Глубокая проверка (KYT-лайт) пока работает только для сети TRON. Для этого адреса доступна быстрая проверка.')
+        } else {
+          setDeepStage('Собираю историю транзакций…')
+          try {
+            r.kyt = await analyzeKyt(a, idx.index, { verdict, matches, frozen })
+            if (r.kyt.score >= 51 && r.verdict === 'clean') r.verdict = 'bad'
+          } catch (e) {
+            setError('Не удалось собрать ончейн-данные для KYT (Tronscan недоступен). Показан результат быстрой проверки.')
+          }
+          setDeepStage('')
+        }
+      }
       setResult(r)
-      await logAmlCheck({ address: r.address, network: r.network, verdict, matches, frozen, counterparty: '' })
+      await logAmlCheck({ address: r.address, network: r.network, verdict: r.verdict, matches, frozen, counterparty: '', kyt: r.kyt })
     } finally {
       setChecking(false)
+      setDeepStage('')
     }
   }
 
@@ -153,6 +172,21 @@ export default function Aml() {
             {isPro ? 'PRO: безлимит' : `Триал: использовано ${usedToday}/${TRIAL_CHECKS_PER_DAY} сегодня`}
           </span>
         </div>
+        <div className="mt-3 flex rounded-xl bg-ink-950 p-1 text-sm font-semibold">
+          {[
+            ['quick', 'Быстрая проверка'],
+            ['deep', 'Глубокая (KYT-лайт · TRON)'],
+          ].map(([m, label]) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => { setMode(m); setResult(null); setError('') }}
+              className={`flex-1 rounded-lg px-3 py-1.5 transition ${mode === m ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <input
             className="input font-mono text-xs"
@@ -164,6 +198,7 @@ export default function Aml() {
             <ShieldCheck size={15} /> {checking ? 'Проверяю…' : 'Проверить'}
           </button>
         </div>
+        {deepStage && <p className="mt-2 text-xs text-brand-soft">{deepStage}</p>}
         {addr.trim() && (
           <p className="mt-1 text-xs text-slate-500">Сеть: {NET_NAMES[detectNetwork(addr)] || 'не распознана'}</p>
         )}
@@ -173,6 +208,7 @@ export default function Aml() {
           </p>
         )}
         {result && <VerdictCard r={result} />}
+        {result?.kyt && <KytReport address={result.address} kyt={result.kyt} />}
       </form>
 
       <div className="card overflow-hidden">
@@ -192,6 +228,7 @@ export default function Aml() {
               <div key={h.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
                 <VerdictDot verdict={h.verdict} />
                 <code className="min-w-0 flex-1 truncate font-mono text-xs text-slate-300" title={h.address}>{h.address}</code>
+                {h.kyt && <span className="shrink-0 rounded-md bg-white/5 px-1.5 py-0.5 font-mono text-[11px] text-slate-300" title="KYT-лайт скор">◉ {h.kyt.score}</span>}
                 <span className="hidden shrink-0 text-xs text-slate-500 sm:block">{NET_NAMES[h.network] || h.network}</span>
                 {h.counterparty && <span className="hidden max-w-[120px] shrink-0 truncate text-xs text-slate-500 md:block">{h.counterparty}</span>}
                 <span className="shrink-0 text-xs text-slate-500">{formatDateTime(h.createdAt)}</span>
@@ -209,8 +246,81 @@ export default function Aml() {
   )
 }
 
-export function VerdictDot({ verdict }) {
-  if (verdict === 'bad') return <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-red-400" title="Риск" />
+export function KytReport({ address, kyt }) {
+  const lvl = KYT_LEVEL[kyt.level] || KYT_LEVEL.low
+  const ring = lvl.cls === 'red' ? '#f87171' : lvl.cls === 'amber' ? '#fbbf24' : '#34d399'
+  const C = 2 * Math.PI * 34
+  return (
+    <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <div className="flex flex-wrap items-center gap-4">
+        <svg width="88" height="88" viewBox="0 0 88 88">
+          <circle cx="44" cy="44" r="34" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="9" />
+          <circle
+            cx="44" cy="44" r="34" fill="none" stroke={ring} strokeWidth="9" strokeLinecap="round"
+            strokeDasharray={C} strokeDashoffset={C - (C * kyt.score) / 100}
+            transform="rotate(-90 44 44)"
+          />
+          <text x="44" y="50" textAnchor="middle" fill="#fff" fontSize="20" fontWeight="800">{kyt.score}</text>
+        </svg>
+        <div className="min-w-0 flex-1">
+          <div className="font-bold">KYT-лайт: {lvl.label} ({kyt.score}/100)</div>
+          <code className="block truncate font-mono text-xs text-slate-400" title={address}>{address}</code>
+          <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-slate-400 sm:grid-cols-3">
+            <span>Возраст: {kyt.stats.ageDays !== null ? `${kyt.stats.ageDays} дн.` : '—'}</span>
+            <span>Операций: {kyt.stats.txTotal}</span>
+            <span>Контрагентов: {kyt.stats.peers}</span>
+            <span>USDT в: {kyt.stats.usdtIn.toLocaleString('ru-RU')}</span>
+            <span>USDT из: {kyt.stats.usdtOut.toLocaleString('ru-RU')}</span>
+            <span>Активность: {kyt.stats.lifespanH !== null ? `${kyt.stats.lifespanH} ч` : '—'}</span>
+          </div>
+        </div>
+        <button type="button" onClick={() => window.print()} className="btn-ghost px-3 py-1.5 text-xs">Печать / PDF</button>
+      </div>
+      {kyt.factors.length > 0 ? (
+        <ul className="mt-3 space-y-1.5">
+          {kyt.factors.map((f, i) => (
+            <li key={i} className="flex items-center gap-2 rounded-xl bg-white/[0.04] px-3 py-2 text-sm">
+              <span className="shrink-0 rounded-md bg-red-500/15 px-2 py-0.5 text-xs font-bold text-red-200">+{f.points}</span>
+              <span className="min-w-0 flex-1"><b>{f.label}</b>{f.detail && <span className="text-slate-400"> · {f.detail}</span>}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 rounded-xl bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">Подозрительных факторов не выявлено: возраст, активность и связи в норме.</p>
+      )}
+      {kyt.dirtyPeers.length > 0 && (
+        <div className="mt-3">
+          <h4 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-red-300">Грязные контрагенты 1-го хопа ({kyt.dirtyPeers.length})</h4>
+          <div className="space-y-1">
+            {kyt.dirtyPeers.map((p) => (
+              <div key={p.address} className="flex items-center gap-2 rounded-xl bg-red-500/10 px-3 py-1.5 font-mono text-xs">
+                <span className="min-w-0 flex-1 truncate" title={p.address}>{p.address}</span>
+                <span className="shrink-0 text-red-200">{p.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {kyt.topPeers.length > 0 && (
+        <div className="mt-3">
+          <h4 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-slate-400">Топ контрагентов</h4>
+          <div className="space-y-1">
+            {kyt.topPeers.map((p) => (
+              <div key={p.address} className="flex items-center gap-2 rounded-xl bg-white/[0.04] px-3 py-1.5 font-mono text-xs text-slate-300">
+                <span className="min-w-0 flex-1 truncate" title={p.address}>{p.address}</span>
+                <span className="shrink-0">{p.txs} оп.</span>
+                {p.dirty && <span className="shrink-0 font-bold text-red-300">санкции</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <p className="mt-2 text-[11px] text-slate-500">KYT-лайт: прямые связи (1 хоп) + поведение. Полный графовый анализ — в следующих версиях.</p>
+    </div>
+  )
+}
+
+export function VerdictDot({ verdict }) {  if (verdict === 'bad') return <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-red-400" title="Риск" />
   if (verdict === 'clean') return <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-400" title="Чисто" />
   return <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-slate-500" title="Неизвестно" />
 }
