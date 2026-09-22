@@ -99,7 +99,7 @@ export default function Settings() {
         <dl className="mt-4 grid gap-2 text-sm text-slate-400 sm:grid-cols-3">
           <div className="rounded-xl bg-white/[0.04] p-3"><dt className="text-xs uppercase">Сделок</dt><dd className="text-lg font-bold text-white">{deals.length}</dd></div>
           <div className="rounded-xl bg-white/[0.04] p-3"><dt className="text-xs uppercase">Контрагентов с рейтингом</dt><dd className="text-lg font-bold text-white">{Object.keys(ratings).length}</dd></div>
-          <div className="rounded-xl bg-white/[0.04] p-3"><dt className="text-xs uppercase">Хранилище</dt><dd className="text-lg font-bold text-white">localStorage</dd></div>
+          <div className="rounded-xl bg-white/[0.04] p-3"><dt className="text-xs uppercase">Хранилище</dt><dd className="text-lg font-bold text-white">Firestore + кэш</dd></div>
         </dl>
       </div>
       <div className="card border-red-500/20 p-5">
