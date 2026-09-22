@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ShieldCheck, ShieldAlert, ShieldQuestion, RefreshCw, ExternalLink, Trash2, ScanSearch, Database } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, ShieldQuestion, RefreshCw, ExternalLink, Trash2, ScanSearch, Database, Copy, Check, Search } from 'lucide-react'
 import { useStore } from '../store/useStore.js'
 import { useCurrentSub } from '../store/useAuth.js'
 import { getAccessState } from '../utils/billing.js'
@@ -39,6 +39,23 @@ export default function Aml() {
   const [mode, setMode] = useState('quick') // quick | deep (KYT-лайт, пока только TRON)
   const [depth, setDepth] = useState(1) // BFS depth for deep mode
   const [deepStage, setDeepStage] = useState('')
+  const [copiedId, setCopiedId] = useState(null)
+
+  const copyAddr = async (e, h) => {
+    e.stopPropagation()
+    try {
+      await navigator.clipboard.writeText(h.address)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = h.address
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      ta.remove()
+    }
+    setCopiedId(h.id)
+    setTimeout(() => setCopiedId(null), 1500)
+  }
 
   useEffect(() => {
     if (!getCachedLists()) {
@@ -244,25 +261,46 @@ export default function Aml() {
           )}
         </div>
         {amlHistory.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-slate-500">Пока пусто. Проверки записываются сюда автоматически.</p>
+          <p className="px-4 py-8 text-center text-sm text-slate-500">Пока пусто. Проверки записываются сюда автоматически, клик по строке открывает детали.</p>
         ) : (
-          <div className="max-h-[380px] divide-y divide-white/5 overflow-y-auto">
-            {amlHistory.map((h) => (
-              <button
-                key={h.id}
-                onClick={() => setResult({ ...h, cached: true })}
-                title="Открыть подробности проверки"
-                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition hover:bg-white/[0.04]"
-              >
-                <VerdictDot verdict={h.verdict} />
-                <code className="min-w-0 flex-1 truncate font-mono text-xs text-slate-300" title={h.address}>{h.address}</code>
-                {h.kyt && <span className="shrink-0 rounded-md bg-white/5 px-1.5 py-0.5 font-mono text-[11px] text-slate-300" title="KYT-лайт скор">◉ {h.kyt.score}</span>}
-                <span className="hidden shrink-0 text-xs text-slate-500 sm:block">{NET_NAMES[h.network] || h.network}</span>
-                {h.counterparty && <span className="hidden max-w-[120px] shrink-0 truncate text-xs text-slate-500 md:block">{h.counterparty}</span>}
-                <span className="shrink-0 text-xs text-slate-500">{formatDateTime(h.createdAt)}</span>
-              </button>
-            ))}
-          </div>
+          <>
+            {/* Desktop table */}
+            <div className="hidden md:block">
+              <div className="grid grid-cols-[150px_130px_120px_110px_1fr_90px] gap-2 border-b border-white/10 px-4 py-2.5 text-xs font-medium uppercase tracking-wide text-slate-500">
+                <span>Время проверки</span>
+                <span>Процент</span>
+                <span>Риск</span>
+                <span>Сеть</span>
+                <span>Адрес депозита</span>
+                <span />
+              </div>
+              <div className="max-h-[380px] overflow-y-auto">
+                {amlHistory.map((h) => (
+                  <HistoryRowDesktop key={h.id} h={h} copied={copiedId === h.id} onCopy={(e) => copyAddr(e, h)} onOpen={() => setResult({ ...h, cached: true })} />
+                ))}
+              </div>
+            </div>
+            {/* Mobile cards */}
+            <div className="max-h-[380px] space-y-2 overflow-y-auto p-3 md:hidden">
+              {amlHistory.map((h) => (
+                <button
+                  key={h.id}
+                  onClick={() => setResult({ ...h, cached: true })}
+                  className="w-full rounded-xl border border-white/10 bg-ink-950/60 p-3 text-left"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <ScoreCell h={h} compact />
+                    <RiskBadge h={h} />
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                    <span className="text-slate-500">{formatDateTime(h.createdAt)}</span>
+                    <NetBadge net={h.network} />
+                  </div>
+                  <code className="mt-1 block truncate font-mono text-xs text-slate-300" title={h.address}>{shortAddr(h.address)}</code>
+                </button>
+              ))}
+            </div>
+          </>
         )}
       </div>
 
@@ -354,6 +392,93 @@ export function KytReport({ address, kyt }) {
         </div>
       )}
       <p className="mt-2 text-[11px] text-slate-500">KYT-лайт: прямые связи (1 хоп) + поведение. Полный графовый анализ — в следующих версиях.</p>
+    </div>
+  )
+}
+
+export function shortAddr(a) {
+  const s = String(a || '')
+  return s.length > 12 ? `${s.slice(0, 5)}...${s.slice(-5)}` : s
+}
+
+function levelOf(h) {
+  if (h.kyt) return h.kyt.level
+  if (h.verdict === 'bad') return 'high'
+  if (h.verdict === 'clean') return 'low'
+  return null
+}
+
+const LEVEL_STYLE = {
+  low: { text: 'Низкий', cls: 'bg-emerald-500/15 text-emerald-200', bar: '#34d399' },
+  medium: { text: 'Средний', cls: 'bg-amber-400/15 text-amber-200', bar: '#fbbf24' },
+  high: { text: 'Высокий', cls: 'bg-red-500/15 text-red-200', bar: '#f87171' },
+}
+
+export function ScoreCell({ h, compact = false }) {
+  const score = h.kyt ? h.kyt.score : null
+  if (score === null || score === undefined) {
+    return <span className="text-xs text-slate-500">— <span className="hidden sm:inline">быстрая</span></span>
+  }
+  const lvl = levelOf(h)
+  const bar = LEVEL_STYLE[lvl]?.bar || '#94a3b8'
+  return (
+    <span className={compact ? '' : 'block'}>
+      <span className="text-sm font-bold text-white">{score}%</span>
+      <span className="mt-1 block h-1.5 w-20 overflow-hidden rounded-full bg-white/10">
+        <span className="block h-full rounded-full" style={{ width: `${score}%`, background: bar }} />
+      </span>
+    </span>
+  )
+}
+
+export function RiskBadge({ h }) {
+  const lvl = levelOf(h)
+  if (!lvl) return <span className="text-xs text-slate-500">—</span>
+  return (
+    <span className={`inline-block rounded-lg px-3 py-1 text-xs font-bold ${LEVEL_STYLE[lvl].cls}`}>
+      {LEVEL_STYLE[lvl].text}
+    </span>
+  )
+}
+
+const NET_STYLE = {
+  tron: { text: 'TRX', cls: 'bg-[#eb0029]/15 text-[#ff5c7a]' },
+  evm: { text: 'EVM', cls: 'bg-brand/20 text-brand-soft' },
+  btc: { text: 'BTC', cls: 'bg-amber-500/15 text-amber-300' },
+  ltc: { text: 'LTC', cls: 'bg-slate-400/15 text-slate-300' },
+  sol: { text: 'SOL', cls: 'bg-violet-500/15 text-violet-300' },
+}
+
+export function NetBadge({ net }) {
+  const s = NET_STYLE[net] || { text: NET_NAMES[net] || '?', cls: 'bg-white/5 text-slate-400' }
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-bold ${s.cls}`}>
+      {net === 'tron' && <span className="grid h-4 w-4 place-items-center rounded-full bg-[#eb0029] text-[9px] font-black text-white">T</span>}
+      {s.text}
+    </span>
+  )
+}
+
+function HistoryRowDesktop({ h, copied, onCopy, onOpen }) {
+  return (
+    <div
+      onClick={onOpen}
+      title="Открыть подробности проверки"
+      className="grid cursor-pointer grid-cols-[150px_130px_120px_110px_1fr_90px] items-center gap-2 border-b border-white/5 px-4 py-2.5 text-sm transition hover:bg-white/[0.04]"
+    >
+      <span className="text-xs text-slate-300">{formatDateTime(h.createdAt)}</span>
+      <ScoreCell h={h} />
+      <RiskBadge h={h} />
+      <NetBadge net={h.network} />
+      <code className="truncate font-mono text-xs text-slate-200" title={h.address}>{shortAddr(h.address)}</code>
+      <span className="flex justify-end gap-1">
+        <button onClick={onCopy} title="Скопировать адрес" className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white">
+          {copied ? <Check size={14} className="text-emerald-300" /> : <Copy size={14} />}
+        </button>
+        <button onClick={onOpen} title="Открыть подробности" className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white">
+          <Search size={14} />
+        </button>
+      </span>
     </div>
   )
 }
