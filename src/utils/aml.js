@@ -24,6 +24,13 @@ export const AML_SOURCES = [
 
 const CACHE_KEY = 'spreadbook-aml-v1'
 export const TRIAL_CHECKS_PER_DAY = 3
+export const CHECK_CACHE_HOURS = 24
+
+// Owner's Tronscan API key — PUBLIC BY DESIGN (shipped in frontend JS).
+// Risk is limited: read-only data API, no funds access. If the quota gets
+// drained, rotate the key in Tronscan dashboard and update this constant.
+// Tip: enable domain/IP restrictions for superpirov.github.io if available.
+export const TRONSCAN_API_KEY = ''
 
 export const USDT_ETH = '0xdAC17F958D2e523B2EE19B794B234232B16a0b7383Cc'.toLowerCase()
 export const USDT_TRON = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
@@ -270,4 +277,73 @@ export function checksUsedToday(history) {
   const start = new Date()
   start.setHours(0, 0, 0, 0)
   return (history || []).filter((h) => new Date(h.createdAt).getTime() >= start.getTime()).length
+}
+
+// Recent verdict reuse (saves API quota + instant). EVM compared lowercase,
+// other networks exact.
+export function findRecentCheck(history, rawAddress, ttlHours = CHECK_CACHE_HOURS) {
+  const a = String(rawAddress || '').trim()
+  const net = detectNetwork(a)
+  const norm = net === 'evm' ? a.toLowerCase() : a
+  const fresh = Date.now() - ttlHours * 3600 * 1000
+  return (
+    (history || []).find((h) => {
+      const ha = String(h.address || '')
+      const hn = net === 'evm' ? ha.toLowerCase() : ha
+      return hn === norm && new Date(h.createdAt).getTime() >= fresh
+    }) || null
+  )
+}
+
+// --- Tronscan Security Service (needs TRONSCAN_API_KEY) ---
+// Returns { flags: [{source,label}], error }. Empty flags = no data/clean.
+
+function parseSecurityFlags(j) {
+  const flags = []
+  if (!j || typeof j !== 'object') return flags
+  const get = (o, path) => path.split('.').reduce((x, k) => (x && typeof x === 'object' ? x[k] : undefined), o)
+  const red = get(j, 'data.red_tag') ?? j.red_tag
+  if (typeof red === 'string' && red && red.toLowerCase() !== 'normal' && red.toLowerCase() !== 'none') {
+    flags.push({ source: 'TRONSCAN_SEC', label: `Tronscan Security: ${red}` })
+  }
+  // Any other truthy risk-ish fields (tolerant to schema changes).
+  const hit = (v) =>
+    v === true || (typeof v === 'string' && /suspicious|fraud|blacklist|black_list|phish|scam|risk|spam|evil|blocked|sanction/i.test(v) && v.toLowerCase() !== 'false')
+  const walk = (o, prefix = '') => {
+    if (!o || typeof o !== 'object' || flags.length > 12) return
+    for (const [k, v] of Object.entries(o)) {
+      if (/red_tag/i.test(k)) continue // handled above
+      if (v && typeof v === 'object') walk(v, `${prefix}${k}.`)
+      else if (/black|fraud|phish|scam|risk|suspicious|evil|sanction|spam/i.test(k) && hit(v)) {
+        flags.push({ source: 'TRONSCAN_SEC', label: `Tronscan Security: ${prefix}${k}=${v}` })
+      }
+    }
+  }
+  walk(j.data && typeof j.data === 'object' ? j.data : j)
+  return flags
+}
+
+export async function checkTronSecurity(rawAddress) {
+  const a = String(rawAddress || '').trim()
+  if (detectNetwork(a) !== 'tron') return { flags: [], error: null }
+  if (!TRONSCAN_API_KEY) return { flags: [], error: 'Нет API-ключа Tronscan' }
+  let res
+  try {
+    res = await fetch(`https://apilist.tronscanapi.com/api/security/account/data?address=${a}`, {
+      headers: { 'TRON-PRO-API-KEY': TRONSCAN_API_KEY },
+    })
+  } catch {
+    return { flags: [], error: 'Tronscan Security: сеть/CORS' }
+  }
+  if (res.status === 401 || res.status === 403) {
+    return { flags: [], error: 'Tronscan Security: ключ отклонён (401/403) — проверьте/обновите ключ' }
+  }
+  if (res.status === 429) return { flags: [], error: 'Tronscan Security: квота исчерпана (429)' }
+  if (!res.ok) return { flags: [], error: `Tronscan Security: HTTP ${res.status}` }
+  try {
+    const j = await res.json()
+    return { flags: parseSecurityFlags(j), error: null }
+  } catch {
+    return { flags: [], error: 'Tronscan Security: плохой ответ' }
+  }
 }

@@ -10,6 +10,8 @@ import {
   extractAddresses,
   checkAddress,
   checkTetherFrozen,
+  checkTronSecurity,
+  findRecentCheck,
   checksUsedToday,
 } from '../utils/aml.js'
 import { VerdictDot } from '../pages/Aml.jsx'
@@ -90,16 +92,27 @@ export default function CounterpartyList() {
       if (!idx) idx = await refreshLists()
       const out = []
       for (const a of addrs) {
+        // Fresh cached verdict — free, no quota spent.
+        const recent = findRecentCheck(amlHistory, a)
+        if (recent) {
+          out.push({ ...recent })
+          continue
+        }
         const base = checkAddress(a, idx.index)
         const { frozen, error: rpcError } = (base.network === 'evm' || base.network === 'tron')
           ? await checkTetherFrozen(a)
           : { frozen: null, error: null }
-        const verdict = base.verdict === 'bad' || frozen === true ? 'bad' : base.verdict
-        const matches = [...base.matches]
+        const { flags: secFlags } = base.network === 'tron'
+          ? await checkTronSecurity(a)
+          : { flags: [], error: null }
+        const matches = [...base.matches, ...secFlags]
         if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
+        const verdict = matches.length > 0 ? 'bad' : base.verdict
         out.push({ address: a, network: base.network, verdict, matches, rpcError: rpcError || '' })
-        await logAmlCheck({ address: a, network: base.network, verdict, matches, frozen, rpcError: rpcError || '', counterparty: selected })
+        await logAmlCheck({ address: a, network: base.network, verdict, matches, frozen, counterparty: selected })
       }
+      // Keep original address order (cached results were prepended out of order).
+      out.sort((x, y) => addrs.indexOf(x.address) - addrs.indexOf(y.address))
       setAmlResults(out)
       await setAmlStatus(selected, out.some((r) => r.verdict === 'bad') ? 'bad' : 'clean')
     } catch (e) {

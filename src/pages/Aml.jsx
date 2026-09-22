@@ -12,6 +12,8 @@ import {
   detectNetwork,
   checkAddress,
   checkTetherFrozen,
+  checkTronSecurity,
+  findRecentCheck,
   explorerUrl,
   checksUsedToday,
 } from '../utils/aml.js'
@@ -67,6 +69,12 @@ export default function Aml() {
     setResult(null)
     const a = addr.trim()
     if (!a) return
+    // Fresh cached verdict — instant, free, no quota spent.
+    const recent = findRecentCheck(amlHistory, a)
+    if (recent) {
+      setResult({ ...recent, cached: true })
+      return
+    }
     if (limitHit) {
       setError(`Лимит триала — ${TRIAL_CHECKS_PER_DAY} проверки в день. PRO — безлимит.`)
       return
@@ -89,12 +97,15 @@ export default function Aml() {
       const { frozen, error: rpcError } = (base.network === 'evm' || base.network === 'tron')
         ? await checkTetherFrozen(a)
         : { frozen: null, error: null }
-      const verdict = base.verdict === 'bad' || frozen === true ? 'bad' : base.verdict
-      const matches = [...base.matches]
+      const { flags: secFlags, error: secError } = base.network === 'tron'
+        ? await checkTronSecurity(a)
+        : { flags: [], error: null }
+      const matches = [...base.matches, ...secFlags]
       if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
-      const r = { address: base.address, network: base.network, verdict, matches, frozen, rpcError: rpcError || '' }
+      const verdict = matches.length > 0 ? 'bad' : base.verdict
+      const r = { address: base.address, network: base.network, verdict, matches, frozen, rpcError: rpcError || '', secError: secError || '', cached: false }
       setResult(r)
-      await logAmlCheck({ address: r.address, network: r.network, verdict, matches, frozen, rpcError: r.rpcError, counterparty: '' })
+      await logAmlCheck({ address: r.address, network: r.network, verdict, matches, frozen, counterparty: '' })
     } finally {
       setChecking(false)
     }
@@ -229,6 +240,9 @@ export function VerdictCard({ r }) {
         <p className="mt-2 text-xs text-slate-400">
           Tether freeze: {r.frozen === true ? <b className="text-red-300">заморожен</b> : r.frozen === false ? <b className="text-emerald-300">не заморожен</b> : 'не проверено (сеть/RPC)'} · Сеть: {NET_NAMES[r.network] || r.network}
         </p>
+      )}
+      {r.cached && (
+        <p className="mt-2 text-xs text-slate-500">Результат из кэша (проверялся ранее, младше 24 ч) — API не опрашивался.</p>
       )}
       {freezeUnknown && r.verdict === 'clean' && (
         <p className="mt-2 rounded-xl bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
