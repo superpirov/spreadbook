@@ -46,9 +46,10 @@ function toUsdtish(t) {
   return Number(t.value || 0) / 10 ** dec
 }
 
-// Full deep check. self = { verdict, matches, frozen } from the quick engine.
-// Returns report { score, level, factors[], stats, dirtyPeers[], generatedAt }.
-export async function analyzeKyt(address, index, self) {
+// Full deep check with BFS. self = { verdict, matches, frozen } from the quick engine.
+// opts: { depth (1-3), onProgress }.
+// Returns report { score, level, depth, factors[], stats, dirtyPeers[], generatedAt }.
+export async function analyzeKyt(address, index, self, opts = {}) {
   const a = String(address).trim()
   const factors = []
   const add = (points, label, detail = '') => {
@@ -136,24 +137,102 @@ export async function analyzeKyt(address, index, self) {
   const txTotal = inCount + outCount
   const lifespanH = firstTs && lastTs ? Math.max((lastTs - firstTs) / 3600000, 0.01) : null
 
-  // 2. Direct exposure: counterparties vs OFAC lists (no per-peer RPC — quota).
-  const dirtyPeers = []
-  if (index) {
-    for (const [peer, st] of peers) {
-      if (detectNetwork(peer) !== 'tron') continue
-      for (const key of lookupKeys(peer)) {
-        const src = index[key]
-        if (src) {
-          dirtyPeers.push({ address: peer, source: src, label: sourceLabel(src), ...st })
-          break
-        }
+  // 2. Multi-hop exposure (BFS): counterparties vs OFAC lists.
+  // No per-peer RPC (quota) — pure local list lookups.
+  // Safeguards: visited set (no cycles), per-level caps, onProgress updates.
+  const visited = new Set([a])
+  const dirtyPeers = [] // { address, hop, source, label }
+  const checkPeer = (peer, hop) => {
+    if (visited.has(peer) || detectNetwork(peer) !== 'tron' || !index) return
+    visited.add(peer)
+    for (const key of lookupKeys(peer)) {
+      const src = index[key]
+      if (src) {
+        dirtyPeers.push({ address: peer, hop, source: src, label: sourceLabel(src) })
+        break
       }
     }
   }
-  if (dirtyPeers.length > 0) {
-    const pts = Math.min(50, dirtyPeers.length * 25)
+  const collectPeers = (addr, tr) => {
+    const map = new Map()
+    const t2 = (x) => {
+      if (!map.has(x)) map.set(x, { txs: 0 })
+      return map.get(x)
+    }
+    for (const t of tr.trc20) {
+      if (t.to === addr && t.from && t.from !== addr) t2(t.from).txs++
+      if (t.from === addr && t.to && t.to !== addr) t2(t.to).txs++
+    }
+    for (const t of tr.trx) {
+      const from = t?.ownerAddress || t?.from
+      const to = t?.toAddress || t?.to
+      if (to === addr && from && from !== addr) t2(from).txs++
+      if (from === addr && to && to !== addr) t2(to).txs++
+    }
+    return map
+  }
+  for (const name of peers.keys()) checkPeer(name, 1)
+
+  const depth = Math.min(3, Math.max(1, opts.depth || 1))
+  const onProgress = opts.onProgress || (() => {})
+  const CAPS = { 2: 20, 3: 30 }
+  const CONC = 4
+  const pool = async (items, fn) => {
+    let i = 0
+    let done = 0
+    const workers = Array.from({ length: Math.min(CONC, items.length) }, async () => {
+      while (i < items.length) {
+        const x = items[i++]
+        try {
+          await fn(x)
+        } catch {
+          /* one bad address must not kill the traversal */
+        }
+        done++
+        onProgress({ stage: fn.stage, done, total: items.length })
+      }
+    })
+    await Promise.all(workers)
+  }
+  let frontier = [...peers.entries()].sort((x, y) => y[1].txs - x[1].txs).map(([name]) => name)
+  for (let hop = 2; hop <= depth; hop++) {
+    const batch = frontier.slice(0, CAPS[hop])
+    if (batch.length === 0) break
+    const next = new Map()
+    const stage = `Хоп ${hop}: проверяю ${batch.length} адресов…`
+    const fn = async (peerAddr) => {
+      const tr = await fetchTronTransfers(peerAddr)
+      for (const [name, st] of collectPeers(peerAddr, tr)) {
+        if (visited.has(name)) continue
+        checkPeer(name, hop)
+        if (!next.has(name)) next.set(name, { txs: 0 })
+        next.get(name).txs += st.txs
+      }
+    }
+    fn.stage = stage
+    onProgress({ stage, done: 0, total: batch.length })
+    await pool(batch, fn)
+    frontier = [...next.entries()].sort((x, y) => y[1].txs - x[1].txs).map(([name]) => name)
+  }
+
+  const hopPts = (list, per, cap) => (list.length > 0 ? Math.min(cap, list.length * per) : 0)
+  const h1 = dirtyPeers.filter((d) => d.hop === 1)
+  const h2 = dirtyPeers.filter((d) => d.hop === 2)
+  const h3 = dirtyPeers.filter((d) => d.hop === 3)
+  if (h1.length > 0) {
+    const pts = hopPts(h1, 25, 50)
     score += pts
-    add(pts, `Прямые связи с санкционными адресами: ${dirtyPeers.length}`, 'Контрагенты 1-го хопа из OFAC SDN')
+    add(pts, `Прямые связи с санкционными адресами: ${h1.length}`, 'Контрагенты 1-го хопа из OFAC SDN')
+  }
+  if (h2.length > 0) {
+    const pts = hopPts(h2, 10, 30)
+    score += pts
+    add(pts, `Связи 2-го хопа с санкциями: ${h2.length}`, 'Контрагенты контрагентов из OFAC SDN')
+  }
+  if (h3.length > 0) {
+    const pts = hopPts(h3, 5, 15)
+    score += pts
+    add(pts, `Связи 3-го хопа с санкциями: ${h3.length}`, 'Дальние связи из OFAC SDN (слабый сигнал)')
   }
 
   // 3. Behavioral heuristics.
@@ -190,6 +269,7 @@ export async function analyzeKyt(address, index, self) {
   return {
     score,
     level,
+    depth,
     factors,
     stats: {
       ageDays: ageDays !== null ? Math.floor(ageDays) : null,

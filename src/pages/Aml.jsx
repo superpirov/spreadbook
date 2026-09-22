@@ -37,6 +37,7 @@ export default function Aml() {
   const [result, setResult] = useState(null) // { address, network, verdict, matches, frozen, kyt? }
   const [error, setError] = useState('')
   const [mode, setMode] = useState('quick') // quick | deep (KYT-лайт, пока только TRON)
+  const [depth, setDepth] = useState(1) // BFS depth for deep mode
   const [deepStage, setDeepStage] = useState('')
 
   useEffect(() => {
@@ -73,8 +74,9 @@ export default function Aml() {
     const a = addr.trim()
     if (!a) return
     // Fresh cached verdict — instant, free, no quota spent.
+    // Deep mode reuses cache only if the cached report is at least as deep.
     const recent = findRecentCheck(amlHistory, a)
-    if (recent && (mode === 'quick' || recent.kyt)) {
+    if (recent && (mode === 'quick' || (recent.kyt && (recent.kyt.depth || 1) >= depth))) {
       setResult({ ...recent, cached: true })
       return
     }
@@ -114,7 +116,10 @@ export default function Aml() {
         } else {
           setDeepStage('Собираю историю транзакций…')
           try {
-            r.kyt = await analyzeKyt(a, idx.index, { verdict, matches, frozen })
+            r.kyt = await analyzeKyt(a, idx.index, { verdict, matches, frozen }, {
+              depth,
+              onProgress: ({ stage, done, total }) => setDeepStage(total > 1 ? `${stage} (${done}/${total})` : stage),
+            })
             if (r.kyt.score >= 51 && r.verdict === 'clean') r.verdict = 'bad'
           } catch (e) {
             setError('Не удалось собрать ончейн-данные для KYT (Tronscan недоступен). Показан результат быстрой проверки.')
@@ -123,7 +128,7 @@ export default function Aml() {
         }
       }
       setResult(r)
-      await logAmlCheck({ address: r.address, network: r.network, verdict: r.verdict, matches, frozen, counterparty: '', kyt: r.kyt })
+      await logAmlCheck({ address: r.address, network: r.network, verdict: r.verdict, matches, frozen, depth: mode === 'deep' ? depth : 0, counterparty: '', kyt: r.kyt })
     } finally {
       setChecking(false)
       setDeepStage('')
@@ -187,6 +192,22 @@ export default function Aml() {
             </button>
           ))}
         </div>
+        {mode === 'deep' && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <span className="font-semibold uppercase tracking-wide text-slate-400">Глубина обхода:</span>
+            {[1, 2, 3].map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setDepth(d)}
+                className={`rounded-xl px-3 py-1.5 font-bold transition ${depth === d ? 'bg-gradient-to-r from-brand to-brand-soft text-white shadow-glow' : 'bg-white/5 text-slate-300 hover:bg-white/10'}`}
+              >
+                {d} хоп{d === 1 ? '' : d === 2 ? 'а' : 'а'}
+              </button>
+            ))}
+            <span className="text-slate-500">{depth === 1 ? 'секунды' : depth === 2 ? 'до ~1 минуты' : 'до ~2–3 минут, глубже и шумнее'}</span>
+          </div>
+        )}
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <input
             className="input font-mono text-xs"
@@ -225,14 +246,19 @@ export default function Aml() {
         ) : (
           <div className="max-h-[380px] divide-y divide-white/5 overflow-y-auto">
             {amlHistory.map((h) => (
-              <div key={h.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+              <button
+                key={h.id}
+                onClick={() => setResult({ ...h, cached: true })}
+                title="Открыть подробности проверки"
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition hover:bg-white/[0.04]"
+              >
                 <VerdictDot verdict={h.verdict} />
                 <code className="min-w-0 flex-1 truncate font-mono text-xs text-slate-300" title={h.address}>{h.address}</code>
                 {h.kyt && <span className="shrink-0 rounded-md bg-white/5 px-1.5 py-0.5 font-mono text-[11px] text-slate-300" title="KYT-лайт скор">◉ {h.kyt.score}</span>}
                 <span className="hidden shrink-0 text-xs text-slate-500 sm:block">{NET_NAMES[h.network] || h.network}</span>
                 {h.counterparty && <span className="hidden max-w-[120px] shrink-0 truncate text-xs text-slate-500 md:block">{h.counterparty}</span>}
                 <span className="shrink-0 text-xs text-slate-500">{formatDateTime(h.createdAt)}</span>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -290,14 +316,21 @@ export function KytReport({ address, kyt }) {
       )}
       {kyt.dirtyPeers.length > 0 && (
         <div className="mt-3">
-          <h4 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-red-300">Грязные контрагенты 1-го хопа ({kyt.dirtyPeers.length})</h4>
+          <h4 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-red-300">
+            Санкционные связи ({kyt.dirtyPeers.length}) · глубина: {kyt.depth || 1} хоп{(kyt.depth || 1) === 1 ? '' : 'а'}
+          </h4>
           <div className="space-y-1">
-            {kyt.dirtyPeers.map((p) => (
-              <div key={p.address} className="flex items-center gap-2 rounded-xl bg-red-500/10 px-3 py-1.5 font-mono text-xs">
-                <span className="min-w-0 flex-1 truncate" title={p.address}>{p.address}</span>
-                <span className="shrink-0 text-red-200">{p.label}</span>
-              </div>
-            ))}
+            {[1, 2, 3].map((hop) =>
+              kyt.dirtyPeers
+                .filter((p) => (p.hop || 1) === hop)
+                .map((p) => (
+                  <div key={p.address} className="flex items-center gap-2 rounded-xl bg-red-500/10 px-3 py-1.5 font-mono text-xs">
+                    <span className="shrink-0 rounded bg-red-500/20 px-1.5 py-0.5 font-sans text-[10px] font-bold text-red-200">{hop} хоп</span>
+                    <span className="min-w-0 flex-1 truncate" title={p.address}>{p.address}</span>
+                    <span className="hidden shrink-0 font-sans text-red-200 sm:block">{p.label}</span>
+                  </div>
+                )),
+            )}
           </div>
         </div>
       )}
