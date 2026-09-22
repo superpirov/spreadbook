@@ -24,8 +24,9 @@ export default function Header({ mode = 'public' }) {
             <CabLink to="/app">Дашборд</CabLink>
             <CabLink to="/app/deals">Сделки</CabLink>
             <CabLink to="/app/contacts">Люди</CabLink>
-            <CabLink to="/app/settings">Бэкап</CabLink>
+            <CabLink to="/app/aml">AML</CabLink>
             <CabLink to="/app/billing">Тариф</CabLink>
+            <CabLink to="/app/settings">Бэкап</CabLink>
             {isAdmin(user) && <CabLink to="/app/admin">Админ</CabLink>}
           </nav>
           <div className="ml-auto flex items-center gap-2">
@@ -46,8 +47,9 @@ export default function Header({ mode = 'public' }) {
           <CabLink to="/app">Дашборд</CabLink>
           <CabLink to="/app/deals">Сделки</CabLink>
           <CabLink to="/app/contacts">Люди</CabLink>
-          <CabLink to="/app/settings">Бэкап</CabLink>
+          <CabLink to="/app/aml">AML</CabLink>
           <CabLink to="/app/billing">Тариф</CabLink>
+          <CabLink to="/app/settings">Бэкап</CabLink>
           {isAdmin(user) && <CabLink to="/app/admin">Админ</CabLink>}
         </nav>
       </header>

@@ -3,9 +3,13 @@ import {
   collection,
   doc,
   setDoc,
+  addDoc,
   deleteDoc,
   onSnapshot,
   writeBatch,
+  query,
+  orderBy,
+  limit,
 } from 'firebase/firestore'
 import { db } from '../utils/firebase.js'
 
@@ -24,6 +28,7 @@ const dealDoc = (owner, id) => doc(db, 'users', owner, 'deals', id)
 const contactsCol = (owner) => collection(db, 'users', owner, 'contacts')
 const contactDoc = (owner, name) => doc(db, 'users', owner, 'contacts', enc(name))
 const userDoc = (owner) => doc(db, 'users', owner)
+const amlCol = (owner) => collection(db, 'users', owner, 'amlchecks')
 
 const cacheKey = (owner) => `spreadbook-cache-v1-${owner}`
 
@@ -39,6 +44,8 @@ function loadCache(owner) {
       profiles: d.profiles && typeof d.profiles === 'object' ? d.profiles : {},
       knownCounterparties: Array.isArray(d.knownCounterparties) ? d.knownCounterparties : [],
       period: d.period || 'all',
+      amlHistory: Array.isArray(d.amlHistory) ? d.amlHistory : [],
+      aml: d.aml && typeof d.aml === 'object' ? d.aml : {},
     }
   } catch {
     return null
@@ -74,6 +81,8 @@ export const useStore = create((set, get) => ({
   knownCounterparties: [],
   period: 'all',
   theme: 'dark',
+  amlHistory: [], // [{ id, address, network, verdict, matches, frozen, counterparty, createdAt }]
+  aml: {}, // { [contactName]: { status: 'clean'|'bad', at } }
   cloudReady: false, // first snapshot received
   cloudError: null,
 
@@ -91,6 +100,8 @@ export const useStore = create((set, get) => ({
           profiles: s.profiles,
           knownCounterparties: s.knownCounterparties,
           period: s.period,
+          amlHistory: s.amlHistory.slice(0, 100),
+          aml: s.aml,
         }),
       )
     } catch {
@@ -112,6 +123,8 @@ export const useStore = create((set, get) => ({
       profiles: cached?.profiles || {},
       knownCounterparties: cached?.knownCounterparties || [],
       period: cached?.period || 'all',
+      amlHistory: cached?.amlHistory || [],
+      aml: cached?.aml || {},
       cloudReady: false,
       cloudError: null,
     })
@@ -139,14 +152,16 @@ export const useStore = create((set, get) => ({
       (snap) => {
         const ratings = {}
         const profiles = {}
+        const aml = {}
         for (const d of snap.docs) {
           const c = d.data()
           if (!c?.name) continue
           if (c.rating || c.note) ratings[c.name] = { rating: c.rating || 0, note: c.note || '' }
           const { wallets, cardNumber, phone, bank } = c
           if (wallets || cardNumber || phone || bank) profiles[c.name] = { wallets, cardNumber, phone, bank }
+          if (c.amlStatus) aml[c.name] = { status: c.amlStatus, at: c.amlCheckedAt || null }
         }
-        set({ ratings, profiles, cloudError: null })
+        set({ ratings, profiles, aml, cloudError: null })
         get().saveCache()
         get().maybeMigrate()
       },
@@ -167,7 +182,16 @@ export const useStore = create((set, get) => ({
       onErr('user'),
     )
 
-    unsubs = [un1, un2, un3]
+    const un4 = onSnapshot(
+      query(amlCol(owner), orderBy('createdAt', 'desc'), limit(100)),
+      (snap) => {
+        set({ amlHistory: snap.docs.map((d) => ({ id: d.id, ...d.data() })), cloudError: null })
+        get().saveCache()
+      },
+      onErr('aml'),
+    )
+
+    unsubs = [un1, un2, un3, un4]
   },
 
   unbindUser: () => {
@@ -180,7 +204,7 @@ export const useStore = create((set, get) => ({
     })
     unsubs = []
     boundUid = null
-    set({ deals: [], ratings: {}, profiles: {}, knownCounterparties: [], period: 'all', cloudReady: false, cloudError: null })
+    set({ deals: [], ratings: {}, profiles: {}, knownCounterparties: [], period: 'all', amlHistory: [], aml: {}, cloudReady: false, cloudError: null })
   },
 
   // One-time upload of the pre-cloud local database (only if cloud is empty).
@@ -286,7 +310,7 @@ export const useStore = create((set, get) => ({
 
   resetAll: async () => {
     const s = get()
-    set({ deals: [], ratings: {}, profiles: {}, knownCounterparties: [], isDemo: false })
+    set({ deals: [], ratings: {}, profiles: {}, knownCounterparties: [], amlHistory: [], aml: {}, isDemo: false })
     get().saveCache()
     if (!boundUid) return
     try {
@@ -294,6 +318,9 @@ export const useStore = create((set, get) => ({
       for (const d of s.deals) batch.delete(dealDoc(boundUid, d.id))
       for (const name of new Set([...Object.keys(s.ratings), ...Object.keys(s.profiles)])) {
         batch.delete(contactDoc(boundUid, name))
+      }
+      for (const h of s.amlHistory) {
+        if (h.id) batch.delete(doc(db, 'users', boundUid, 'amlchecks', h.id))
       }
       batch.set(userDoc(boundUid), { knownCounterparties: [] }, { merge: true })
       await batch.commit()
@@ -347,7 +374,6 @@ export const useStore = create((set, get) => ({
       /* offline */
     }
   },
-
   setProfile: async (name, patch) => {
     set((s) => ({
       profiles: { ...s.profiles, [name]: { wallets: '', cardNumber: '', phone: '', bank: '', ...(s.profiles[name] || {}), ...patch } },
@@ -356,6 +382,50 @@ export const useStore = create((set, get) => ({
     if (!boundUid) return
     try {
       await setDoc(contactDoc(boundUid, name), { name, ...patch }, { merge: true })
+    } catch {
+      /* offline */
+    }
+  },
+
+  // --- AML ---
+
+  setAmlStatus: async (name, status) => {
+    const at = new Date().toISOString()
+    set((s) => ({ aml: { ...s.aml, [name]: { status, at } } }))
+    get().saveCache()
+    if (!boundUid) return
+    try {
+      await setDoc(contactDoc(boundUid, name), { name, amlStatus: status, amlCheckedAt: at }, { merge: true })
+    } catch {
+      /* offline */
+    }
+  },
+
+  logAmlCheck: async (entry) => {
+    // entry: { address, network, verdict, matches, frozen, counterparty }
+    const rec = { ...entry, id: entry.id || uid(), createdAt: new Date().toISOString() }
+    set((s) => ({ amlHistory: [rec, ...s.amlHistory].slice(0, 100) }))
+    get().saveCache()
+    if (!boundUid) return rec.id
+    try {
+      const { id, ...payload } = rec
+      void id
+      await addDoc(amlCol(boundUid), payload)
+    } catch {
+      /* offline — cached locally */
+    }
+    return rec.id
+  },
+
+  clearAmlHistory: async () => {
+    const ids = get().amlHistory.map((h) => h.id).filter(Boolean)
+    set({ amlHistory: [] })
+    get().saveCache()
+    if (!boundUid || ids.length === 0) return
+    try {
+      const batch = writeBatch(db)
+      for (const id of ids) batch.delete(doc(db, 'users', boundUid, 'amlchecks', id))
+      await batch.commit()
     } catch {
       /* offline */
     }

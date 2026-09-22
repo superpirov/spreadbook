@@ -1,0 +1,237 @@
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { ShieldCheck, ShieldAlert, ShieldQuestion, RefreshCw, ExternalLink, Trash2, ScanSearch, Database } from 'lucide-react'
+import { useStore } from '../store/useStore.js'
+import { useCurrentSub } from '../store/useAuth.js'
+import { getAccessState } from '../utils/billing.js'
+import {
+  AML_SOURCES,
+  TRIAL_CHECKS_PER_DAY,
+  getCachedLists,
+  refreshLists,
+  detectNetwork,
+  checkAddress,
+  checkTetherFrozen,
+  explorerUrl,
+  checksUsedToday,
+} from '../utils/aml.js'
+import { formatDateTime } from '../utils/formatters.js'
+
+const NET_NAMES = { tron: 'TRON', evm: 'EVM (ETH/BSC/…)', btc: 'Bitcoin', ltc: 'Litecoin', sol: 'Solana', unknown: 'не распознана' }
+
+export default function Aml() {
+  const amlHistory = useStore((s) => s.amlHistory)
+  const logAmlCheck = useStore((s) => s.logAmlCheck)
+  const clearAmlHistory = useStore((s) => s.clearAmlHistory)
+  const sub = useCurrentSub()
+  const isPro = getAccessState(sub).status === 'pro'
+
+  const [lists, setLists] = useState(() => getCachedLists())
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshMsg, setRefreshMsg] = useState('')
+  const [addr, setAddr] = useState('')
+  const [checking, setChecking] = useState(false)
+  const [result, setResult] = useState(null) // { address, network, verdict, matches, frozen }
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!getCachedLists()) {
+      setRefreshing(true)
+      refreshLists()
+        .then((d) => setLists(d))
+        .catch((e) => setRefreshMsg(e.message))
+        .finally(() => setRefreshing(false))
+    }
+  }, [])
+
+  const usedToday = checksUsedToday(amlHistory)
+  const limitHit = !isPro && usedToday >= TRIAL_CHECKS_PER_DAY
+
+  const doRefresh = async () => {
+    setRefreshing(true)
+    setRefreshMsg('')
+    try {
+      const d = await refreshLists()
+      setLists(d)
+      setRefreshMsg(`Базы обновлены: ${d.total.toLocaleString('ru-RU')} адресов.` + (d.errors.length ? ` Не загрузились: ${d.errors.join(', ')} (остались прошлые данные).` : ''))
+    } catch (e) {
+      setRefreshMsg(e.message)
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const run = async (e) => {
+    e.preventDefault()
+    setError('')
+    setResult(null)
+    const a = addr.trim()
+    if (!a) return
+    if (limitHit) {
+      setError(`Лимит триала — ${TRIAL_CHECKS_PER_DAY} проверки в день. PRO — безлимит.`)
+      return
+    }
+    let idx = lists
+    if (!idx) {
+      setChecking(true)
+      try {
+        idx = await refreshLists()
+        setLists(idx)
+      } catch (err) {
+        setChecking(false)
+        setError(err.message)
+        return
+      }
+    }
+    setChecking(true)
+    try {
+      const base = checkAddress(a, idx.index)
+      const frozen = base.network === 'evm' || base.network === 'tron' ? await checkTetherFrozen(a) : null
+      const verdict = base.verdict === 'bad' || frozen === true ? 'bad' : base.verdict
+      const matches = [...base.matches]
+      if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
+      const r = { address: base.address, network: base.network, verdict, matches, frozen }
+      setResult(r)
+      await logAmlCheck({ address: r.address, network: r.network, verdict, matches, frozen, counterparty: '' })
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-2xl font-extrabold tracking-tight">AML-проверка</h1>
+        <p className="text-sm text-slate-400">Скрининг адресов по санкционным спискам OFAC и заморозкам Tether — до сделки, а не после.</p>
+      </div>
+
+      <div className="card p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="flex items-center gap-2 text-sm font-bold"><Database size={15} /> Базы скрининга</h3>
+          <button onClick={doRefresh} disabled={refreshing} className="btn-ghost px-3 py-1.5 text-xs">
+            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+            {refreshing ? 'Загрузка…' : 'Обновить базы'}
+          </button>
+        </div>
+        {lists ? (
+          <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
+            <span className="rounded-lg bg-emerald-500/15 px-2 py-1 font-semibold text-emerald-200">
+              {lists.total.toLocaleString('ru-RU')} адресов · обновлено {formatDateTime(lists.updatedAt)}
+            </span>
+            {AML_SOURCES.map((s) => (
+              <span key={s.id} className="rounded-lg bg-white/5 px-2 py-1 text-slate-400">
+                {s.id}: {(lists.counts[s.id] ?? 0).toLocaleString('ru-RU')}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-2 text-xs text-slate-500">Базы ещё не загружены — нажмите «Обновить базы» (нужен интернет, ~40 КБ).</p>
+        )}
+        {refreshMsg && <p className="mt-2 text-xs text-slate-300">{refreshMsg}</p>}
+        <p className="mt-2 text-[11px] text-slate-500">
+          Источник: OFAC SDN (репо 0xB10C, автообновление каждую ночь) + живой ончейн-статус заморозки USDT. Лейблы Etherscan/Tronscan («Phishing») закрыты их API — сверяйте вручную по ссылке из результата.
+        </p>
+      </div>
+
+      <form onSubmit={run} className="card p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="flex items-center gap-2 text-sm font-bold"><ScanSearch size={15} /> Проверить адрес</h3>
+          <span className="text-xs text-slate-500">
+            {isPro ? 'PRO: безлимит' : `Триал: использовано ${usedToday}/${TRIAL_CHECKS_PER_DAY} сегодня`}
+          </span>
+        </div>
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <input
+            className="input font-mono text-xs"
+            placeholder="TXXXX… / 0x… / bc1…"
+            value={addr}
+            onChange={(e) => { setAddr(e.target.value); setError(''); }}
+          />
+          <button type="submit" disabled={checking || !addr.trim()} className="btn-primary shrink-0">
+            <ShieldCheck size={15} /> {checking ? 'Проверяю…' : 'Проверить'}
+          </button>
+        </div>
+        {addr.trim() && (
+          <p className="mt-1 text-xs text-slate-500">Сеть: {NET_NAMES[detectNetwork(addr)] || 'не распознана'}</p>
+        )}
+        {error && (
+          <p className="mt-2 rounded-xl bg-red-500/15 px-3 py-2 text-sm text-red-200">
+            {error} {limitHit && <Link to="/app/billing" className="underline">Оформить PRO →</Link>}
+          </p>
+        )}
+        {result && <VerdictCard r={result} />}
+      </form>
+
+      <div className="card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+          <h3 className="text-sm font-bold">Журнал проверок ({amlHistory.length})</h3>
+          {amlHistory.length > 0 && (
+            <button onClick={() => { if (window.confirm('Очистить журнал проверок?')) clearAmlHistory() }} className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-red-300">
+              <Trash2 size={13} /> Очистить
+            </button>
+          )}
+        </div>
+        {amlHistory.length === 0 ? (
+          <p className="px-4 py-8 text-center text-sm text-slate-500">Пока пусто. Проверки записываются сюда автоматически.</p>
+        ) : (
+          <div className="max-h-[380px] divide-y divide-white/5 overflow-y-auto">
+            {amlHistory.map((h) => (
+              <div key={h.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                <VerdictDot verdict={h.verdict} />
+                <code className="min-w-0 flex-1 truncate font-mono text-xs text-slate-300" title={h.address}>{h.address}</code>
+                <span className="hidden shrink-0 text-xs text-slate-500 sm:block">{NET_NAMES[h.network] || h.network}</span>
+                {h.counterparty && <span className="hidden max-w-[120px] shrink-0 truncate text-xs text-slate-500 md:block">{h.counterparty}</span>}
+                <span className="shrink-0 text-xs text-slate-500">{formatDateTime(h.createdAt)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <p className="text-[11px] leading-relaxed text-slate-500">
+        Дисклеймер: скрининг сверяет адрес с известными санкционными и замороженными списками, но не анализирует историю его транзакций.
+        Отсутствие совпадений не гарантирует чистоту адреса. Для глубокого KYT-аудита используйте специализированные сервисы.
+      </p>
+    </div>
+  )
+}
+
+export function VerdictDot({ verdict }) {
+  if (verdict === 'bad') return <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-red-400" title="Риск" />
+  if (verdict === 'clean') return <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-400" title="Чисто" />
+  return <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-slate-500" title="Неизвестно" />
+}
+
+export function VerdictCard({ r }) {
+  const url = explorerUrl(r.address)
+  return (
+    <div className={`mt-3 rounded-2xl border p-4 ${
+      r.verdict === 'bad' ? 'border-red-500/30 bg-red-500/10' : r.verdict === 'clean' ? 'border-emerald-500/25 bg-emerald-500/10' : 'border-white/10 bg-white/[0.03]'
+    }`}>
+      <div className="flex items-center gap-2 font-bold">
+        {r.verdict === 'bad' ? <ShieldAlert size={18} className="text-red-300" /> : r.verdict === 'clean' ? <ShieldCheck size={18} className="text-emerald-300" /> : <ShieldQuestion size={18} className="text-slate-400" />}
+        {r.verdict === 'bad' ? 'Высокий риск — совпадение найдено' : r.verdict === 'clean' ? 'Совпадений не найдено' : 'Не удалось проверить'}
+      </div>
+      <code className="mt-1 block break-all font-mono text-xs text-slate-300">{r.address}</code>
+      {r.matches.length > 0 && (
+        <ul className="mt-2 space-y-1 text-sm">
+          {r.matches.map((m) => (
+            <li key={m.source} className="inline-flex items-center gap-1.5 rounded-lg bg-red-500/15 px-2 py-1 text-xs font-semibold text-red-200">
+              🚩 {m.label}
+            </li>
+          ))}
+        </ul>
+      )}
+      {r.verdict !== 'unknown' && (
+        <p className="mt-2 text-xs text-slate-400">
+          Tether freeze: {r.frozen === true ? <b className="text-red-300">заморожен</b> : r.frozen === false ? <b className="text-emerald-300">не заморожен</b> : 'не проверено (сеть/RPC)'} · Сеть: {NET_NAMES[r.network] || r.network}
+        </p>
+      )}
+      {url && (
+        <a href={url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200">
+          Открыть в обозревателе (сверить лейблы вручную) <ExternalLink size={11} />
+        </a>
+      )}
+    </div>
+  )
+}

@@ -83,12 +83,25 @@ service cloud.firestore {
       match /contacts/{contactId} {
         allow read, write: if ownerOrAdmin(uid);
       }
+      match /amlchecks/{checkId} {
+        allow read, write: if ownerOrAdmin(uid);
+      }
     }
   }
 }
 ```
 
 Как устроен стор (`src/store/useStore.js`): при входе `bindUser(uid)` поднимает 3 realtime-подписки (`onSnapshot`), localStorage остаётся мгновенным кэшем (`spreadbook-cache-v1-{uid}`) и офлайн-фallback; запись — оптимистично локально, затем во Firestore. Включён persistent offline cache Firestore: без интернета всё работает, при появлении сети досинхронизируется само. Старая локальная база (`spreadbook-storage-v2`) один раз автоматически переезжает в облако, если облако пусто. Выход (`unbindUser`) очищает данные из памяти — важно на чужих устройствах.
+
+## AML-скрининг
+
+Страница `/app/aml` + кнопка «Проверить кошельки» в карточке контрагента.
+- Движок `src/utils/aml.js`: OFAC SDN списки (репо 0xB10C, ветка `lists`, TXT по сетям TRX/ETH/USDT/USDC/BSC/XBT/LTC/SOL) тянутся с raw.githubusercontent и кэшируются в localStorage (`spreadbook-aml-v1`), кнопка «Обновить базы».
+- Нормализация: EVM → lowercase; TRON base58 ↔ hex (`bs58`), кросс-проверка EVM-представления Tron-адреса.
+- Живой статус заморозки USDT: Ethereum `isBlackListed` (`0xe47d6060`) через public RPC, TRON — `triggerconstantcontract` в Trongrid. Недоступность RPC = «не проверено», не ошибка.
+- Вердикты: `bad` (совпадение/фриз), `clean`, `unknown`. Лейблы Etherscan/Tronscan бесплатно по API не отдаются — в результате ссылка для ручной сверки.
+- История в `users/{uid}/amlchecks` (realtime, лимит 100), риск-бейдж контакта (`amlStatus`) в документе контакта.
+- Лимиты: триал — 3 проверки/день (считается по истории, сквозит между устройствами), PRO — безлимит. Константа `TRIAL_CHECKS_PER_DAY` в `aml.js`.
 
 ## Модель прибыли (MVP)
 

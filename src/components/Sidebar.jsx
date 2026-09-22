@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, ArrowLeftRight, Users, DatabaseBackup, Plus, Crown, ShieldCheck } from 'lucide-react'
+import { LayoutDashboard, ArrowLeftRight, Users, DatabaseBackup, Plus, Crown, ShieldCheck, ScanSearch } from 'lucide-react'
 import { useAuth } from '../store/useAuth.js'
 import { isAdmin } from '../utils/admin.js'
 
@@ -27,11 +27,14 @@ export default function Sidebar() {
           <NavLink to="/app/contacts" className={item}>
             <Users size={17} /> Контрагенты
           </NavLink>
-          <NavLink to="/app/settings" className={item}>
-            <DatabaseBackup size={17} /> Импорт / Экспорт
+          <NavLink to="/app/aml" className={item}>
+            <ScanSearch size={17} /> AML-проверка
           </NavLink>
           <NavLink to="/app/billing" className={item}>
             <Crown size={17} /> Тариф и оплата
+          </NavLink>
+          <NavLink to="/app/settings" className={item}>
+            <DatabaseBackup size={17} /> Импорт / Экспорт
           </NavLink>
           {admin && (
             <NavLink to="/app/admin" className={item}>

@@ -1,6 +1,18 @@
 import { useMemo, useState } from 'react'
-import { Star, User, UserPlus, Trash2, Wallet, CreditCard, Phone, Landmark } from 'lucide-react'
+import { Star, User, UserPlus, Trash2, Wallet, CreditCard, Phone, Landmark, ScanSearch } from 'lucide-react'
 import { useStore } from '../store/useStore.js'
+import { useCurrentSub } from '../store/useAuth.js'
+import { getAccessState } from '../utils/billing.js'
+import {
+  TRIAL_CHECKS_PER_DAY,
+  getCachedLists,
+  refreshLists,
+  extractAddresses,
+  checkAddress,
+  checkTetherFrozen,
+  checksUsedToday,
+} from '../utils/aml.js'
+import { VerdictDot } from '../pages/Aml.jsx'
 import { dealFiatTotal, dealNetValue } from '../utils/calculations.js'
 import { formatMoney, formatDateTime } from '../utils/formatters.js'
 
@@ -13,15 +25,26 @@ export default function CounterpartyList() {
   const setProfile = useStore((s) => s.setProfile)
   const addCounterparty = useStore((s) => s.addCounterparty)
   const deleteCounterparty = useStore((s) => s.deleteCounterparty)
+  const aml = useStore((s) => s.aml)
+  const amlHistory = useStore((s) => s.amlHistory)
+  const setAmlStatus = useStore((s) => s.setAmlStatus)
+  const logAmlCheck = useStore((s) => s.logAmlCheck)
+  const sub = useCurrentSub()
+  const isPro = getAccessState(sub).status === 'pro'
   const [selected, setSelected] = useState(null)
   const [draft, setDraft] = useState({ note: '', wallets: '', cardNumber: '', phone: '', bank: '' })
   const [newName, setNewName] = useState('')
   const [addError, setAddError] = useState('')
   const [saved, setSaved] = useState(false)
+  const [checkingAml, setCheckingAml] = useState(false)
+  const [amlMsg, setAmlMsg] = useState('')
+  const [amlResults, setAmlResults] = useState([])
 
   const select = (name) => {
     setSelected(name)
     setSaved(false)
+    setAmlMsg('')
+    setAmlResults([])
     setDraft({
       note: ratings[name]?.note || '',
       wallets: profiles[name]?.wallets || '',
@@ -46,6 +69,42 @@ export default function CounterpartyList() {
     if (!window.confirm(`Удалить контрагента «${selected}»?${n > 0 ? ` У него ${n} сделок — сами сделки останутся, но станут безымянными.` : ''} Рейтинг и реквизиты тоже удалятся.`)) return
     deleteCounterparty(selected)
     setSelected(null)
+  }
+
+  const checkWallets = async () => {
+    if (!selected || checkingAml) return
+    setAmlMsg('')
+    setAmlResults([])
+    const addrs = extractAddresses(draft.wallets || profiles[selected]?.wallets || '')
+    if (addrs.length === 0) {
+      setAmlMsg('В поле «Адреса кошельков» нет распознаваемых адресов.')
+      return
+    }
+    if (!isPro && checksUsedToday(amlHistory) + addrs.length > TRIAL_CHECKS_PER_DAY) {
+      setAmlMsg(`Нужно проверок: ${addrs.length}, а лимит триала — ${TRIAL_CHECKS_PER_DAY} в день. PRO — безлимит.`)
+      return
+    }
+    setCheckingAml(true)
+    try {
+      let idx = getCachedLists()
+      if (!idx) idx = await refreshLists()
+      const out = []
+      for (const a of addrs) {
+        const base = checkAddress(a, idx.index)
+        const frozen = base.network === 'evm' || base.network === 'tron' ? await checkTetherFrozen(a) : null
+        const verdict = base.verdict === 'bad' || frozen === true ? 'bad' : base.verdict
+        const matches = [...base.matches]
+        if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
+        out.push({ address: a, network: base.network, verdict, matches })
+        await logAmlCheck({ address: a, network: base.network, verdict, matches, frozen, counterparty: selected })
+      }
+      setAmlResults(out)
+      await setAmlStatus(selected, out.some((r) => r.verdict === 'bad') ? 'bad' : 'clean')
+    } catch (e) {
+      setAmlMsg(e.message || 'Не удалось выполнить проверку.')
+    } finally {
+      setCheckingAml(false)
+    }
   }
 
   const submitNew = (e) => {
@@ -114,6 +173,11 @@ export default function CounterpartyList() {
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-brand/60 to-mint/60">
                   <User size={16} />
                 </span>
+                {aml[s.name] && (
+                  <span title={aml[s.name].status === 'bad' ? 'AML: риск' : 'AML: чисто'}>
+                    <VerdictDot verdict={aml[s.name].status} />
+                  </span>
+                )}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold">{s.name}</span>
                   <span className="block text-xs text-slate-400">
@@ -216,9 +280,26 @@ export default function CounterpartyList() {
                   />
                 </div>
               </div>
-              <button className="btn-primary mt-3 w-full sm:w-auto" onClick={saveDraft}>
-                {saved ? 'Сохранено ✓' : 'Сохранить реквизиты'}
-              </button>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button className="btn-primary" onClick={saveDraft}>
+                  {saved ? 'Сохранено ✓' : 'Сохранить реквизиты'}
+                </button>
+                <button className="btn-ghost" onClick={checkWallets} disabled={checkingAml}>
+                  <ScanSearch size={15} /> {checkingAml ? 'Проверяю…' : 'Проверить кошельки (AML)'}
+                </button>
+              </div>
+              {amlMsg && <p className="mt-2 text-xs text-red-300">{amlMsg}</p>}
+              {amlResults.length > 0 && (
+                <div className="mt-2 space-y-1.5">
+                  {amlResults.map((r) => (
+                    <div key={r.address} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs ${r.verdict === 'bad' ? 'bg-red-500/15 text-red-200' : 'bg-emerald-500/10 text-emerald-200'}`}>
+                      <VerdictDot verdict={r.verdict} />
+                      <code className="min-w-0 flex-1 truncate font-mono" title={r.address}>{r.address}</code>
+                      <span className="shrink-0">{r.verdict === 'bad' ? r.matches.map((m) => m.label).join(', ') : 'чисто'}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <h4 className="mb-2 mt-4 text-sm font-bold">История сделок ({sel.deals.length})</h4>
