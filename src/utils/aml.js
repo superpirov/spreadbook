@@ -185,7 +185,13 @@ async function ethCallFreeze(address) {
     method: 'eth_call',
     params: [{ to: USDT_ETH, data: IS_BLACKLISTED_SELECTOR + padded }, 'latest'],
   })
-  for (const rpc of ['https://ethereum.publicnode.com', 'https://cloudflare-eth.com']) {
+  const rpcs = [
+    'https://ethereum.publicnode.com',
+    'https://eth.llamarpc.com',
+    'https://rpc.ankr.com/eth',
+    'https://cloudflare-eth.com',
+  ]
+  for (const rpc of rpcs) {
     try {
       const res = await fetch(rpc, { method: 'POST', headers: { 'content-type': 'application/json' }, body })
       if (!res.ok) continue
@@ -201,29 +207,37 @@ async function ethCallFreeze(address) {
   return null
 }
 
+async function tronCallFreezeOnce(endpoint, tAddress) {
+  const hex = tronToHex(tAddress)
+  if (!hex) return null
+  const param = hex.replace(/^41/, '').padStart(64, '0')
+  const res = await fetch(`${endpoint}/wallet/triggerconstantcontract`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      owner_address: 'T9yD14Nj9j7xAB4dbGeiX9h8unkKLxmGkn', // any valid address (burn)
+      contract_address: USDT_TRON,
+      function_selector: 'isBlackListed(address)',
+      parameter: param,
+    }),
+  })
+  if (!res.ok) return null
+  const j = await res.json()
+  const out = j?.constant_result?.[0]
+  if (!out) return null
+  return BigInt('0x' + out) === 1n
+}
+
 async function tronCallFreeze(tAddress) {
-  try {
-    const hex = tronToHex(tAddress)
-    if (!hex) return null
-    const param = hex.replace(/^41/, '').padStart(64, '0')
-    const res = await fetch('https://api.trongrid.io/wallet/triggerconstantcontract', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        owner_address: 'T9yD14Nj9j7xAB4dbGeiX9h8unkKLxmGkn', // any valid address (burn)
-        contract_address: USDT_TRON,
-        function_selector: 'isBlackListed(address)',
-        parameter: param,
-      }),
-    })
-    if (!res.ok) return null
-    const j = await res.json()
-    const out = j?.constant_result?.[0]
-    if (!out) return null
-    return BigInt('0x' + out) === 1n
-  } catch {
-    return null
+  for (const endpoint of ['https://api.trongrid.io', 'https://tron-rpc.publicnode.com']) {
+    try {
+      const r = await tronCallFreezeOnce(endpoint, tAddress)
+      if (r !== null) return r
+    } catch {
+      /* try next endpoint */
+    }
   }
+  return null
 }
 
 // true = frozen, false = clear, null = unknown (offline/RPC down).

@@ -204,13 +204,14 @@ export function VerdictDot({ verdict }) {
 
 export function VerdictCard({ r }) {
   const url = explorerUrl(r.address)
+  const freezeUnknown = (r.network === 'evm' || r.network === 'tron') && (r.frozen === null || r.frozen === undefined)
   return (
     <div className={`mt-3 rounded-2xl border p-4 ${
       r.verdict === 'bad' ? 'border-red-500/30 bg-red-500/10' : r.verdict === 'clean' ? 'border-emerald-500/25 bg-emerald-500/10' : 'border-white/10 bg-white/[0.03]'
     }`}>
       <div className="flex items-center gap-2 font-bold">
         {r.verdict === 'bad' ? <ShieldAlert size={18} className="text-red-300" /> : r.verdict === 'clean' ? <ShieldCheck size={18} className="text-emerald-300" /> : <ShieldQuestion size={18} className="text-slate-400" />}
-        {r.verdict === 'bad' ? 'Высокий риск — совпадение найдено' : r.verdict === 'clean' ? 'Совпадений не найдено' : 'Не удалось проверить'}
+        {r.verdict === 'bad' ? 'Высокий риск — совпадение найдено' : r.verdict === 'clean' ? 'Совпадений в списках OFAC нет' : 'Не удалось проверить'}
       </div>
       <code className="mt-1 block break-all font-mono text-xs text-slate-300">{r.address}</code>
       {r.matches.length > 0 && (
@@ -225,6 +226,11 @@ export function VerdictCard({ r }) {
       {r.verdict !== 'unknown' && (
         <p className="mt-2 text-xs text-slate-400">
           Tether freeze: {r.frozen === true ? <b className="text-red-300">заморожен</b> : r.frozen === false ? <b className="text-emerald-300">не заморожен</b> : 'не проверено (сеть/RPC)'} · Сеть: {NET_NAMES[r.network] || r.network}
+        </p>
+      )}
+      {freezeUnknown && r.verdict === 'clean' && (
+        <p className="mt-2 rounded-xl bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+          ⚠ Статус заморозки USDT проверить не удалось (RPC недоступен). Адрес может быть заморожен Tether, хотя в OFAC его нет — сверьте вручную в обозревателе перед сделкой.
         </p>
       )}
       {url && (
