@@ -59,7 +59,7 @@ const STEPS = [
 const FAQ = [
   {
     q: 'Мои данные в безопасности?',
-    a: 'Да: у SpreadBook нет сервера. Все сделки хранятся в localStorage вашего браузера. Но делайте бэкап в JSON — при очистке браузера данные пропадут.',
+    a: 'Да: сделки, контакты и реквизиты лежат в вашем личном облаке и недоступны другим пользователям. Данные синхронизируются между вашими устройствами. Бэкап в JSON всё равно рекомендуем — как страховку.',
   },
   {
     q: 'Это точный бухгалтерский P&L?',
@@ -190,7 +190,7 @@ export default function Landing() {
       </section>
 
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-4 text-xs text-slate-500">
-        <span>SpreadBook · open-source учет P2P-сделок · данные только в вашем браузере</span>
+        <span>SpreadBook · учет P2P-сделок · данные в вашем личном облаке</span>
         <Link to="/login" className="hover:text-slate-300">Войти →</Link>
       </footer>
     </div>

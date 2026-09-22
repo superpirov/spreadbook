@@ -1,7 +1,8 @@
 // Billing: 3-day free trial + paid USDT (TRC-20) subscription.
 //
-// Enforcement is client-side (static hosting has no backend): the subscription
-// state lives in localStorage, mirrored to Firestore (see users.js) so the
+// Subscription state lives in Firestore (mirrored to localStorage cache,
+// see useAuth + users.js) so the owner can manage subscriptions from the
+// admin panel. A tech-savvy user can bypass local checks via devtools —
 // owner can manage subscriptions from the admin panel. A tech-savvy user can
 // bypass local checks via devtools — for strict enforcement a backend webhook
 // (e.g. Firebase Function checking Trongrid) is needed later. The on-chain TX

@@ -56,7 +56,7 @@ export default function HeroTicker() {
         <div>
           <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
             <span className="h-2 w-2 animate-pulseSoft rounded-full bg-emerald-400" />
-            P2P-учет локально · без сервера · приватно
+            P2P-учет в личном облаке · синхронизация · приватно
           </p>
           <h1 className="text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">
             SpreadBook — журнал
@@ -67,7 +67,7 @@ export default function HeroTicker() {
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-400">
             Быстрый ввод покупок и продаж, живой дашборд прибыли, CRM контрагентов и бэкап в JSON/CSV.
-            Все работает на GitHub Pages — данные не покидают ваш браузер.
+            Данные хранятся в вашем личном облаке и доступны с любого устройства.
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
             <a href="#/login" className="btn-primary">
