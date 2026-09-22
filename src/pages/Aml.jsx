@@ -86,13 +86,15 @@ export default function Aml() {
     setChecking(true)
     try {
       const base = checkAddress(a, idx.index)
-      const frozen = base.network === 'evm' || base.network === 'tron' ? await checkTetherFrozen(a) : null
+      const { frozen, error: rpcError } = (base.network === 'evm' || base.network === 'tron')
+        ? await checkTetherFrozen(a)
+        : { frozen: null, error: null }
       const verdict = base.verdict === 'bad' || frozen === true ? 'bad' : base.verdict
       const matches = [...base.matches]
       if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
-      const r = { address: base.address, network: base.network, verdict, matches, frozen }
+      const r = { address: base.address, network: base.network, verdict, matches, frozen, rpcError: rpcError || '' }
       setResult(r)
-      await logAmlCheck({ address: r.address, network: r.network, verdict, matches, frozen, counterparty: '' })
+      await logAmlCheck({ address: r.address, network: r.network, verdict, matches, frozen, rpcError: r.rpcError, counterparty: '' })
     } finally {
       setChecking(false)
     }
@@ -231,6 +233,7 @@ export function VerdictCard({ r }) {
       {freezeUnknown && r.verdict === 'clean' && (
         <p className="mt-2 rounded-xl bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
           ⚠ Статус заморозки USDT проверить не удалось (RPC недоступен). Адрес может быть заморожен Tether, хотя в OFAC его нет — сверьте вручную в обозревателе перед сделкой.
+          {r.rpcError && <span className="mt-1 block font-mono text-[10px] opacity-70">{r.rpcError}</span>}
         </p>
       )}
       {url && (

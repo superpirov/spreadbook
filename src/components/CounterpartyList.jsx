@@ -91,12 +91,14 @@ export default function CounterpartyList() {
       const out = []
       for (const a of addrs) {
         const base = checkAddress(a, idx.index)
-        const frozen = base.network === 'evm' || base.network === 'tron' ? await checkTetherFrozen(a) : null
+        const { frozen, error: rpcError } = (base.network === 'evm' || base.network === 'tron')
+          ? await checkTetherFrozen(a)
+          : { frozen: null, error: null }
         const verdict = base.verdict === 'bad' || frozen === true ? 'bad' : base.verdict
         const matches = [...base.matches]
         if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
-        out.push({ address: a, network: base.network, verdict, matches })
-        await logAmlCheck({ address: a, network: base.network, verdict, matches, frozen, counterparty: selected })
+        out.push({ address: a, network: base.network, verdict, matches, rpcError: rpcError || '' })
+        await logAmlCheck({ address: a, network: base.network, verdict, matches, frozen, rpcError: rpcError || '', counterparty: selected })
       }
       setAmlResults(out)
       await setAmlStatus(selected, out.some((r) => r.verdict === 'bad') ? 'bad' : 'clean')

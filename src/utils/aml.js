@@ -191,61 +191,70 @@ async function ethCallFreeze(address) {
     'https://rpc.ankr.com/eth',
     'https://cloudflare-eth.com',
   ]
+  const errors = []
   for (const rpc of rpcs) {
     try {
       const res = await fetch(rpc, { method: 'POST', headers: { 'content-type': 'application/json' }, body })
-      if (!res.ok) continue
+      if (!res.ok) throw new Error(`${rpc}: HTTP ${res.status}`)
       const j = await res.json()
       const hex = String(j?.result || '')
-      if (/^0x[0-9a-f]*$/.test(hex) && hex.length >= 2) {
-        return BigInt(hex) === 1n
-      }
-    } catch {
-      /* try next RPC */
+      if (!/^0x[0-9a-f]*$/.test(hex) || hex.length < 2) throw new Error(`${rpc}: пустой ответ`)
+      return { frozen: BigInt(hex) === 1n, error: null }
+    } catch (e) {
+      errors.push(e.message)
     }
   }
-  return null
+  return { frozen: null, error: errors.join('; ') }
 }
 
 async function tronCallFreezeOnce(endpoint, tAddress) {
   const hex = tronToHex(tAddress)
   if (!hex) return null
+  // Canonical EVM ABI encoding: 20-byte address (no 0x41 prefix), left-padded.
   const param = hex.replace(/^41/, '').padStart(64, '0')
-  const res = await fetch(`${endpoint}/wallet/triggerconstantcontract`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      owner_address: 'T9yD14Nj9j7xAB4dbGeiX9h8unkKLxmGkn', // any valid address (burn)
-      contract_address: USDT_TRON,
-      function_selector: 'isBlackListed(address)',
-      parameter: param,
-    }),
-  })
-  if (!res.ok) return null
+  let res
+  try {
+    res = await fetch(`${endpoint}/wallet/triggerconstantcontract`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        owner_address: 'T9yD14Nj9j7xAB4dbGeiX9h8unkKLxmGkn', // any valid address (burn)
+        contract_address: USDT_TRON,
+        function_selector: 'isBlackListed(address)',
+        parameter: param,
+      }),
+    })
+  } catch {
+    throw new Error(`${endpoint}: сеть/CORS`)
+  }
+  if (!res.ok) throw new Error(`${endpoint}: HTTP ${res.status}`)
   const j = await res.json()
   const out = j?.constant_result?.[0]
-  if (!out) return null
+  if (!out) throw new Error(`${endpoint}: пустой ответ`)
   return BigInt('0x' + out) === 1n
 }
 
 async function tronCallFreeze(tAddress) {
+  const errors = []
   for (const endpoint of ['https://api.trongrid.io', 'https://tron-rpc.publicnode.com']) {
     try {
-      const r = await tronCallFreezeOnce(endpoint, tAddress)
-      if (r !== null) return r
-    } catch {
-      /* try next endpoint */
+      const v = await tronCallFreezeOnce(endpoint, tAddress)
+      if (v !== null) return { frozen: v, error: null }
+      errors.push(`${endpoint}: пустой ответ`)
+    } catch (e) {
+      errors.push(e.message)
     }
   }
-  return null
+  return { frozen: null, error: errors.join('; ') }
 }
 
-// true = frozen, false = clear, null = unknown (offline/RPC down).
+// { frozen: true|false|null, error: string|null }.
+// null = unknown (offline/RPC down) — never treat as "clear".
 export async function checkTetherFrozen(raw) {
   const net = detectNetwork(raw)
   if (net === 'evm') return ethCallFreeze(raw.trim())
   if (net === 'tron') return tronCallFreeze(raw.trim())
-  return null
+  return { frozen: null, error: null }
 }
 
 export function explorerUrl(raw) {
