@@ -229,6 +229,7 @@ async function tronCallFreezeOnce(endpoint, tAddress) {
         contract_address: USDT_TRON,
         function_selector: 'isBlackListed(address)',
         parameter: param,
+        visible: true, // addresses below are base58, not hex
       }),
     })
   } catch {
