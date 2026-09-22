@@ -195,17 +195,19 @@ export default function Aml() {
         {mode === 'deep' && (
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
             <span className="font-semibold uppercase tracking-wide text-slate-400">Глубина обхода:</span>
-            {[1, 2, 3].map((d) => (
+            {[1, 2, 3, 4, 5].map((d) => (
               <button
                 key={d}
                 type="button"
                 onClick={() => setDepth(d)}
                 className={`rounded-xl px-3 py-1.5 font-bold transition ${depth === d ? 'bg-gradient-to-r from-brand to-brand-soft text-white shadow-glow' : 'bg-white/5 text-slate-300 hover:bg-white/10'}`}
               >
-                {d} хоп{d === 1 ? '' : d === 2 ? 'а' : 'а'}
+                {d} хоп{d === 1 ? '' : 'а'}
               </button>
             ))}
-            <span className="text-slate-500">{depth === 1 ? 'секунды' : depth === 2 ? 'до ~1 минуты' : 'до ~2–3 минут, глубже и шумнее'}</span>
+            <span className="text-slate-500">
+              {depth === 1 ? 'секунды' : depth === 2 ? 'до ~1 минуты' : depth === 3 ? 'до ~2–3 минут' : 'долго, больше шума'}
+            </span>
           </div>
         )}
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
@@ -298,6 +300,9 @@ export function KytReport({ address, kyt }) {
             <span>USDT в: {kyt.stats.usdtIn.toLocaleString('ru-RU')}</span>
             <span>USDT из: {kyt.stats.usdtOut.toLocaleString('ru-RU')}</span>
             <span>Активность: {kyt.stats.lifespanH !== null ? `${kyt.stats.lifespanH} ч` : '—'}</span>
+            <span>Экспозиция санкций: {kyt.exposurePct ?? 0}% объёма</span>
+            <span>Глубина: {kyt.depth || 1} хоп{(kyt.depth || 1) === 1 ? '' : 'а'}</span>
+            {kyt.stats.fakeContracts?.length > 0 && <span className="font-bold text-red-300">Поддельный USDT!</span>}
           </div>
         </div>
         <button type="button" onClick={() => window.print()} className="btn-ghost px-3 py-1.5 text-xs">Печать / PDF</button>
@@ -320,7 +325,7 @@ export function KytReport({ address, kyt }) {
             Санкционные связи ({kyt.dirtyPeers.length}) · глубина: {kyt.depth || 1} хоп{(kyt.depth || 1) === 1 ? '' : 'а'}
           </h4>
           <div className="space-y-1">
-            {[1, 2, 3].map((hop) =>
+            {[1, 2, 3, 4, 5].map((hop) =>
               kyt.dirtyPeers
                 .filter((p) => (p.hop || 1) === hop)
                 .map((p) => (

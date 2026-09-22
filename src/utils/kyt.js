@@ -1,4 +1,4 @@
-import { lookupKeys, detectNetwork, sourceLabel } from './aml.js'
+import { lookupKeys, detectNetwork, sourceLabel, checkTronSecurity, USDT_TRON } from './aml.js'
 
 // KYT-lite (phase 1): 1-hop exposure + behavioral scoring for TRON.
 // No backend: Tronscan public API only (no key needed for these endpoints).
@@ -47,8 +47,8 @@ function toUsdtish(t) {
 }
 
 // Full deep check with BFS. self = { verdict, matches, frozen } from the quick engine.
-// opts: { depth (1-3), onProgress }.
-// Returns report { score, level, depth, factors[], stats, dirtyPeers[], generatedAt }.
+// opts: { depth (1-5), onProgress }.
+// Returns report { score, level, depth, exposurePct, factors[], stats, dirtyPeers[], generatedAt }.
 export async function analyzeKyt(address, index, self, opts = {}) {
   const a = String(address).trim()
   const factors = []
@@ -90,6 +90,8 @@ export async function analyzeKyt(address, index, self, opts = {}) {
   let usdtOut = 0
   let firstTs = null
   let lastTs = null
+  let dustIn = 0
+  const fakeContracts = new Set()
   const bumpTs = (ts) => {
     if (!ts) return
     if (!firstTs || ts < firstTs) firstTs = ts
@@ -99,6 +101,15 @@ export async function analyzeKyt(address, index, self, opts = {}) {
     const ts = t?.block_timestamp || t?.timestamp
     bumpTs(ts)
     const u = toUsdtish(t)
+    const sym = String(t?.tokenInfo?.tokenAbbr || t?.tokenAbbr || '').toUpperCase()
+    if (t.to === a || t.from === a) {
+      if (u > 0 && u < 1) dustIn++
+      // Counterfeit USDT: "USDT" from any contract except the official one.
+      if (sym === 'USDT') {
+        const cc = String(t.contract_address || t.contractAddress || '')
+        if (cc && cc !== USDT_TRON && cc.toLowerCase() !== USDT_TRON.toLowerCase()) fakeContracts.add(cc)
+      }
+    }
     if (t.to === a) {
       inCount++
       usdtIn += u
@@ -173,9 +184,10 @@ export async function analyzeKyt(address, index, self, opts = {}) {
   }
   for (const name of peers.keys()) checkPeer(name, 1)
 
-  const depth = Math.min(3, Math.max(1, opts.depth || 1))
+  const depth = Math.min(5, Math.max(1, opts.depth || 1))
   const onProgress = opts.onProgress || (() => {})
-  const CAPS = { 2: 20, 3: 30 }
+  const CAPS = { 2: 20, 3: 20, 4: 12, 5: 8 } // per-level address budget (quota + time)
+  const HOP_PTS = { 1: [25, 50], 2: [10, 30], 3: [5, 15], 4: [3, 10], 5: [2, 5] } // [per-hit, cap]
   const CONC = 4
   const pool = async (items, fn) => {
     let i = 0
@@ -215,24 +227,49 @@ export async function analyzeKyt(address, index, self, opts = {}) {
     frontier = [...next.entries()].sort((x, y) => y[1].txs - x[1].txs).map(([name]) => name)
   }
 
-  const hopPts = (list, per, cap) => (list.length > 0 ? Math.min(cap, list.length * per) : 0)
-  const h1 = dirtyPeers.filter((d) => d.hop === 1)
-  const h2 = dirtyPeers.filter((d) => d.hop === 2)
-  const h3 = dirtyPeers.filter((d) => d.hop === 3)
-  if (h1.length > 0) {
-    const pts = hopPts(h1, 25, 50)
-    score += pts
-    add(pts, `Прямые связи с санкционными адресами: ${h1.length}`, 'Контрагенты 1-го хопа из OFAC SDN')
+  // Security flags on top counterparties (shared Tronscan key — budgeted to top 8).
+  const topForSec = [...peers.entries()]
+    .sort((x, y) => y[1].usdtIn + y[1].usdtOut + y[1].txs - (x[1].usdtIn + x[1].usdtOut + x[1].txs))
+    .slice(0, 8)
+    .map(([name]) => name)
+  if (topForSec.length > 0) {
+    const stage = 'Флаги контрагентов (Tronscan)…'
+    const secFn = async (peerAddr) => {
+      const { flags } = await checkTronSecurity(peerAddr)
+      for (const f of flags) {
+        if (!dirtyPeers.some((d) => d.address === peerAddr && d.source === 'TRONSCAN_SEC_PEER')) {
+          dirtyPeers.push({ address: peerAddr, hop: 1, source: 'TRONSCAN_SEC_PEER', label: f.label })
+        }
+      }
+    }
+    secFn.stage = stage
+    onProgress({ stage, done: 0, total: topForSec.length })
+    await pool(topForSec, secFn)
   }
-  if (h2.length > 0) {
-    const pts = hopPts(h2, 10, 30)
+
+  const HOP_NAMES = { 1: 'Прямые связи', 2: 'Связи 2-го хопа', 3: 'Связи 3-го хопа', 4: 'Связи 4-го хопа', 5: 'Связи 5-го хопа' }
+  for (let hop = 1; hop <= 5; hop++) {
+    const list = dirtyPeers.filter((d) => d.hop === hop && d.source !== 'TRONSCAN_SEC_PEER')
+    if (list.length === 0) continue
+    const [per, cap] = HOP_PTS[hop]
+    const pts = Math.min(cap, list.length * per)
     score += pts
-    add(pts, `Связи 2-го хопа с санкциями: ${h2.length}`, 'Контрагенты контрагентов из OFAC SDN')
+    add(pts, `${HOP_NAMES[hop]} с санкционными адресами: ${list.length}`, `OFAC SDN, вес падает с глубиной (+${per})`)
   }
-  if (h3.length > 0) {
-    const pts = hopPts(h3, 5, 15)
+  const secPeers = dirtyPeers.filter((d) => d.source === 'TRONSCAN_SEC_PEER')
+  if (secPeers.length > 0) {
+    const pts = Math.min(30, secPeers.length * 15)
     score += pts
-    add(pts, `Связи 3-го хопа с санкциями: ${h3.length}`, 'Дальние связи из OFAC SDN (слабый сигнал)')
+    add(pts, `Флаги Tronscan у прямых контрагентов: ${secPeers.length}`, secPeers.map((d) => d.label).slice(0, 3).join('; '))
+  }
+
+  if (fakeContracts.size > 0) {
+    score += 40
+    add(40, `Поддельный USDT: переводы с левых контрактов (${fakeContracts.size})`, [...fakeContracts].slice(0, 2).join(', '))
+  }
+  if (dustIn >= 3) {
+    score += 8
+    add(8, `Пылевые входящие: ${dustIn}`, 'Переводы <1 USDT — признак dust-атак и спама')
   }
 
   // 3. Behavioral heuristics.
@@ -261,6 +298,11 @@ export async function analyzeKyt(address, index, self, opts = {}) {
 
   score = Math.min(100, Math.round(score))
   const level = score >= 51 ? 'high' : score >= 21 ? 'medium' : 'low'
+  // Exposure: share of received USDT volume that came via sanctioned 1-hop peers.
+  const dirtyUsdtIn = dirtyPeers
+    .filter((d) => d.hop === 1 && d.source !== 'TRONSCAN_SEC_PEER')
+    .reduce((s, d) => s + (peers.get(d.address)?.usdtIn || 0), 0)
+  const exposurePct = usdtIn > 0 ? Math.round((dirtyUsdtIn / usdtIn) * 10000) / 100 : 0
   const topPeers = [...peers.entries()]
     .map(([address, st]) => ({ address, ...st, dirty: dirtyPeers.some((d) => d.address === address) }))
     .sort((x, y) => y.txs - x.txs)
@@ -270,6 +312,7 @@ export async function analyzeKyt(address, index, self, opts = {}) {
     score,
     level,
     depth,
+    exposurePct,
     factors,
     stats: {
       ageDays: ageDays !== null ? Math.floor(ageDays) : null,
@@ -280,6 +323,8 @@ export async function analyzeKyt(address, index, self, opts = {}) {
       usdtOut: Math.round(usdtOut * 100) / 100,
       peers: peers.size,
       lifespanH: lifespanH !== null ? Math.round(lifespanH * 10) / 10 : null,
+      dustIn,
+      fakeContracts: [...fakeContracts],
     },
     dirtyPeers,
     topPeers,
