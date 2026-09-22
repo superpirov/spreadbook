@@ -14,7 +14,6 @@ import {
   checkAddress,
   checkTetherFrozen,
   checkTronSecurity,
-  checkChainAbuse,
   getCanonical,
   getCommunityIndex,
   saveCommunityIndex,
@@ -164,15 +163,8 @@ export default function Aml() {
       const { flags: secFlags, error: secError } = (!canonical && base.network === 'tron')
         ? await checkTronSecurity(a)
         : { flags: [], error: null }
-      const { count: abuseCount, categories: abuseCats } = !canonical
-        ? await checkChainAbuse(a)
-        : { count: 0, categories: [] }
       const matches = [...base.matches, ...secFlags]
       if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
-      if (abuseCount > 0) {
-        const cats = abuseCats.length ? ` (${abuseCats.slice(0, 3).join(', ')})` : ''
-        matches.push({ source: 'CHAINABUSE', label: `ChainAbuse: жалоб ${abuseCount}${cats}` })
-      }
       const verdict = matches.length > 0 ? 'bad' : base.verdict
       const r = { address: base.address, network: base.network, verdict, matches, frozen, rpcError: rpcError || '', secError: secError || '', canonical: canonical || '', cached: false, kyt: null }
       if (mode === 'deep') {
@@ -235,7 +227,7 @@ export default function Aml() {
         )}
         {refreshMsg && <p className="mt-2 text-xs text-slate-300">{refreshMsg}</p>}
         <p className="mt-2 text-[11px] text-slate-500">
-          Источники: OFAC SDN (репо 0xB10C, автообновление каждую ночь), живой ончейн-статус заморозки USDT, Tronscan Security, жалобы ChainAbuse и метки сообщества. Лейблы Etherscan/Tronscan («Phishing») закрыты их API — сверяйте вручную по ссылке из результата.
+          Источники: OFAC SDN (репо 0xB10C, автообновление каждую ночь), живой ончейн-статус заморозки USDT, Tronscan Security и метки сообщества. Лейблы Etherscan/Tronscan («Phishing») закрыты их API — сверяйте вручную по ссылке из результата.
         </p>
       </div>
 
