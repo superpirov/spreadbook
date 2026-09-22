@@ -1,5 +1,6 @@
 import { doc, getDoc, setDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, query, where, limit, serverTimestamp } from 'firebase/firestore'
 import { db } from './firebase.js'
+import { makeRefCode } from './referral.js'
 
 // Firestore user registry: collection "users", doc id = Firebase uid.
 // Doc shape: { email, name, createdAt, lastSeen, trialStart, plan, planId,
@@ -114,6 +115,87 @@ export async function deleteReport(id) {
   await deleteDoc(doc(db, 'reports', id))
 }
 
+// --- Referrals ---
+// refcodes/{code}: { uid } — public read (auth), owner-only write.
+// referrals/{autoId}: { code, referrerUid, refereeUid, refereeEmail,
+//   status: signed_up|paid, claimed, createdAt, paidAt }.
+// Read/update: only the referrer. Create: the referee themselves.
+// The PRO bonus is CLAIMED by the referrer (writes own user doc) — no server.
+
 export async function fetchApprovedReports() {
   return fetchReports('approved')
+}
+
+const refcodesCol = () => collection(db, 'refcodes')
+const referralsCol = () => collection(db, 'referrals')
+
+export async function ensureRefCode(uid) {
+  const code = makeRefCode(uid)
+  const ref = doc(db, 'refcodes', code)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) {
+    await setDoc(ref, { uid, createdAt: new Date().toISOString() })
+  }
+  return code
+}
+
+export async function resolveRefCode(code) {
+  const clean = String(code || '').trim().toUpperCase()
+  if (!clean) return null
+  const snap = await getDoc(doc(db, 'refcodes', clean))
+  if (!snap.exists()) return null
+  return { code: clean, uid: snap.data()?.uid || null }
+}
+
+export async function createReferral({ code, referrerUid, refereeUid, refereeEmail }) {
+  if (!referrerUid || !refereeUid || referrerUid === refereeUid) return null
+  // One referral per referee (idempotent).
+  const existing = await getDocs(query(referralsCol(), where('refereeUid', '==', refereeUid), limit(5)))
+  if (!existing.empty) return null
+  const ref = await addDoc(referralsCol(), {
+    code,
+    referrerUid,
+    refereeUid,
+    refereeEmail: refereeEmail || '',
+    status: 'signed_up',
+    claimed: false,
+    createdAt: new Date().toISOString(),
+    paidAt: null,
+  })
+  return ref.id
+}
+
+export async function fetchMyReferrals(uid) {
+  const snap = await getDocs(query(referralsCol(), where('referrerUid', '==', uid), limit(200)))
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+}
+
+// Called when the REFEREE pays: marks their referral row as paid.
+export async function markReferralPaid(refereeUid) {
+  const snap = await getDocs(query(referralsCol(), where('refereeUid', '==', refereeUid), limit(5)))
+  if (snap.empty) return false
+  // Referee can update own row (rules allow: refereeUid == auth.uid).
+  await updateDoc(snap.docs[0].ref, { status: 'paid', paidAt: new Date().toISOString() })
+  return true
+}
+
+// Called by the REFERRER to collect +N days PRO. Writes own user doc.
+export async function claimReferralBonus(referrerUid, referralId, currentExpiresAt, bonusDays) {
+  const ref = doc(db, 'referrals', referralId)
+  const snap = await getDoc(ref)
+  const data = snap.data()
+  if (!data || data.referrerUid !== referrerUid || data.status !== 'paid' || data.claimed) {
+    throw new Error('Бонус недоступен (уже забран или нет оплаты).')
+  }
+  const base = Math.max(Date.now(), currentExpiresAt ? new Date(currentExpiresAt).getTime() : 0)
+  const next = new Date(base + bonusDays * 24 * 60 * 60 * 1000).toISOString()
+  await updateDoc(userDoc(referrerUid), {
+    plan: 'pro',
+    expiresAt: next,
+    updatedAt: serverTimestamp(),
+  })
+  await updateDoc(ref, { claimed: true, claimedAt: new Date().toISOString() })
+  return next
 }

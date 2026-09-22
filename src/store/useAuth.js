@@ -10,7 +10,8 @@ import {
 } from 'firebase/auth'
 import { auth } from '../utils/firebase.js'
 import { getPlan } from '../utils/billing.js'
-import { ensureUserDoc, saveSubToCloud } from '../utils/users.js'
+import { ensureUserDoc, saveSubToCloud, resolveRefCode, createReferral, markReferralPaid } from '../utils/users.js'
+import { consumeRefParam } from '../utils/referral.js'
 import { useStore } from './useStore.js'
 
 // Real Firebase Authentication (email/password).
@@ -124,6 +125,18 @@ export const useAuth = create(
         })
         useStore.getState().bindUser(user.id)
         syncCloud(user, get, set)
+        // Referral attribution (fire-and-forget): pending ?ref= code → referral row.
+        try {
+          const code = consumeRefParam()
+          if (code) {
+            const hit = await resolveRefCode(code)
+            if (hit?.uid && hit.uid !== user.id) {
+              await createReferral({ code: hit.code, referrerUid: hit.uid, refereeUid: user.id, refereeEmail: clean })
+            }
+          }
+        } catch {
+          /* referral is best-effort */
+        }
       },
 
       login: async (email, password) => {
@@ -165,6 +178,12 @@ export const useAuth = create(
           await saveSubToCloud(id, next)
         } catch {
           /* local cache kept; cloud sync retries on next login */
+        }
+        // If this user was referred, mark their referral row as paid (best-effort).
+        try {
+          await markReferralPaid(id)
+        } catch {
+          /* ignore */
         }
       },
     }),

@@ -47,6 +47,13 @@ npm run deploy
 2. Authentication → Settings → **Authorized domains** → добавлен `superpirov.github.io` (иначе вход с сайта отклоняется с `auth/unauthorized-domain`).
 3. Данные сделок по-прежнему в `localStorage` (per-browser). Синхронизация между устройствами — следующий шаг: Firestore.
 
+## Реферальная программа
+
+Без бэкенда: код `SB-XXXXXX` (из uid), ссылка `?ref=CODE#/login` (захват в `main.jsx` → localStorage → consume при регистрации).
+- `refcodes/{code}` → `{ uid }`, `referrals/{auto}` → `{ code, referrerUid, refereeUid, status: signed_up|paid, claimed }`.
+- Награда: +7 дней PRO (`REF_BONUS_DAYS` в `referral.js`) за каждого оплатившего. Оплата реферала помечает строку (`markReferralPaid` из `activatePro`), бонус ЗАБИРАЕТ реферер кнопкой (пишет свой документ + `claimed`) — сервер не нужен.
+- Страница `/app/referrals`: ссылка-копия, счётчики, список, кнопки клейма. Правила — в блоке rules выше.
+
 ## Оплата (BILLING)
 
 Модель: 3 дня триала с момента первого входа, далее PRO — 19 USDT / 30 дней или 132 USDT / 365 дней (≈11 USDT/мес).
@@ -91,6 +98,19 @@ service cloud.firestore {
     match /reports/{reportId} {
       allow read, create: if request.auth != null;
       allow update, delete: if request.auth != null && request.auth.token.email == 'pirov.ru@yandex.ru';
+    }
+    // Referrals: codes are public to logged-in users; referral rows visible
+    // only to the referrer; created by the referee; bonus claimed by referrer.
+    match /refcodes/{code} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null && request.resource.data.uid == request.auth.uid;
+      allow delete: if false;
+    }
+    match /referrals/{refId} {
+      allow read: if request.auth != null && resource.data.referrerUid == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.refereeUid == request.auth.uid;
+      allow update: if request.auth != null && (resource.data.referrerUid == request.auth.uid || resource.data.refereeUid == request.auth.uid);
+      allow delete: if false;
     }
   }
 }

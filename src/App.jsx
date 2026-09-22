@@ -16,6 +16,7 @@ import Settings from './pages/Settings.jsx'
 import BillingPage from './pages/BillingPage.jsx'
 import Admin from './pages/Admin.jsx'
 import Aml from './pages/Aml.jsx'
+import Referrals from './pages/Referrals.jsx'
 
 // Public landing + login, cabinet (/app/*) behind auth gate + paywall.
 function CabinetLayout() {
@@ -101,6 +102,7 @@ export default function App() {
           <Route path="deals" element={<Deals />} />
           <Route path="contacts" element={<Contacts />} />
           <Route path="aml" element={<Aml />} />
+          <Route path="referrals" element={<Referrals />} />
           <Route path="settings" element={<Settings />} />
           <Route path="billing" element={<BillingPage />} />
           <Route path="admin" element={<Admin />} />
