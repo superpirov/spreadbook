@@ -30,7 +30,7 @@ export const CHECK_CACHE_HOURS = 24
 // Risk is limited: read-only data API, no funds access. If the quota gets
 // drained, rotate the key in Tronscan dashboard and update this constant.
 // Tip: enable domain/IP restrictions for superpirov.github.io if available.
-export const TRONSCAN_API_KEY = ''
+export const TRONSCAN_API_KEY = '8d733970-35c4-4e3d-8515-fd3c4026cfee'
 
 export const USDT_ETH = '0xdAC17F958D2e523B2EE19B794B234232B16a0b7383Cc'.toLowerCase()
 export const USDT_TRON = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
