@@ -1,4 +1,4 @@
-import { lookupKeys, detectNetwork, sourceLabel, checkTronSecurity, USDT_TRON } from './aml.js'
+import { lookupKeys, detectNetwork, sourceLabel, checkTronSecurity, USDT_TRON, getCanonical } from './aml.js'
 
 // KYT-lite (phase 1): 1-hop exposure + behavioral scoring for TRON.
 // No backend: Tronscan public API only (no key needed for these endpoints).
@@ -154,6 +154,11 @@ export async function analyzeKyt(address, index, self, opts = {}) {
   const visited = new Set([a])
   const dirtyPeers = [] // { address, hop, source, label }
   const checkPeer = (peer, hop) => {
+    // Canonical contracts (e.g. official USDT) are always clean.
+    if (getCanonical(peer)) {
+      visited.add(peer)
+      return
+    }
     if (visited.has(peer) || detectNetwork(peer) !== 'tron' || !index) return
     visited.add(peer)
     for (const key of lookupKeys(peer)) {
@@ -304,7 +309,7 @@ export async function analyzeKyt(address, index, self, opts = {}) {
     .reduce((s, d) => s + (peers.get(d.address)?.usdtIn || 0), 0)
   const exposurePct = usdtIn > 0 ? Math.round((dirtyUsdtIn / usdtIn) * 10000) / 100 : 0
   const topPeers = [...peers.entries()]
-    .map(([address, st]) => ({ address, ...st, dirty: dirtyPeers.some((d) => d.address === address) }))
+    .map(([address, st]) => ({ address, ...st, dirty: dirtyPeers.some((d) => d.address === address), canonical: getCanonical(address) }))
     .sort((x, y) => y.txs - x.txs)
     .slice(0, 10)
 

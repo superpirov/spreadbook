@@ -11,6 +11,7 @@ import {
   checkAddress,
   checkTetherFrozen,
   checkTronSecurity,
+  getCanonical,
   findRecentCheck,
   checksUsedToday,
 } from '../utils/aml.js'
@@ -99,16 +100,17 @@ export default function CounterpartyList() {
           continue
         }
         const base = checkAddress(a, idx.index)
-        const { frozen, error: rpcError } = (base.network === 'evm' || base.network === 'tron')
+        const canonical = getCanonical(a)
+        const { frozen, error: rpcError } = (!canonical && (base.network === 'evm' || base.network === 'tron'))
           ? await checkTetherFrozen(a)
           : { frozen: null, error: null }
-        const { flags: secFlags } = base.network === 'tron'
+        const { flags: secFlags } = (!canonical && base.network === 'tron')
           ? await checkTronSecurity(a)
           : { flags: [], error: null }
         const matches = [...base.matches, ...secFlags]
         if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
         const verdict = matches.length > 0 ? 'bad' : base.verdict
-        out.push({ address: a, network: base.network, verdict, matches, rpcError: rpcError || '' })
+        out.push({ address: a, network: base.network, verdict, matches, rpcError: rpcError || '', canonical: canonical || '' })
         await logAmlCheck({ address: a, network: base.network, verdict, matches, frozen, counterparty: selected })
       }
       // Keep original address order (cached results were prepended out of order).

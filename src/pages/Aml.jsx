@@ -13,6 +13,7 @@ import {
   checkAddress,
   checkTetherFrozen,
   checkTronSecurity,
+  getCanonical,
   findRecentCheck,
   explorerUrl,
   checksUsedToday,
@@ -117,16 +118,18 @@ export default function Aml() {
     setDeepStage('')
     try {
       const base = checkAddress(a, idx.index)
-      const { frozen, error: rpcError } = (base.network === 'evm' || base.network === 'tron')
+      // Canonical contracts skip live/security checks — their flags are meaningless.
+      const canonical = getCanonical(a)
+      const { frozen, error: rpcError } = (!canonical && (base.network === 'evm' || base.network === 'tron'))
         ? await checkTetherFrozen(a)
         : { frozen: null, error: null }
-      const { flags: secFlags, error: secError } = base.network === 'tron'
+      const { flags: secFlags, error: secError } = (!canonical && base.network === 'tron')
         ? await checkTronSecurity(a)
         : { flags: [], error: null }
       const matches = [...base.matches, ...secFlags]
       if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
       const verdict = matches.length > 0 ? 'bad' : base.verdict
-      const r = { address: base.address, network: base.network, verdict, matches, frozen, rpcError: rpcError || '', secError: secError || '', cached: false, kyt: null }
+      const r = { address: base.address, network: base.network, verdict, matches, frozen, rpcError: rpcError || '', secError: secError || '', canonical: canonical || '', cached: false, kyt: null }
       if (mode === 'deep') {
         if (base.network !== 'tron') {
           setError('Глубокая проверка (KYT-лайт) пока работает только для сети TRON. Для этого адреса доступна быстрая проверка.')
@@ -385,6 +388,7 @@ export function KytReport({ address, kyt }) {
               <div key={p.address} className="flex items-center gap-2 rounded-xl bg-white/[0.04] px-3 py-1.5 font-mono text-xs text-slate-300">
                 <span className="min-w-0 flex-1 truncate" title={p.address}>{p.address}</span>
                 <span className="shrink-0">{p.txs} оп.</span>
+                {p.canonical && <span className="shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 font-sans text-[10px] font-bold text-emerald-200" title={p.canonical}>контракт</span>}
                 {p.dirty && <span className="shrink-0 font-bold text-red-300">санкции</span>}
               </div>
             ))}
@@ -500,6 +504,11 @@ export function VerdictCard({ r }) {
         {r.verdict === 'bad' ? 'Высокий риск — совпадение найдено' : r.verdict === 'clean' ? 'Совпадений в списках OFAC нет' : 'Не удалось проверить'}
       </div>
       <code className="mt-1 block break-all font-mono text-xs text-slate-300">{r.address}</code>
+      {r.canonical && (
+        <p className="mt-2 rounded-xl bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+          ✓ Официальный контракт: {r.canonical} — метки API для него игнорируются.
+        </p>
+      )}
       {r.matches.length > 0 && (
         <ul className="mt-2 space-y-1 text-sm">
           {r.matches.map((m) => (

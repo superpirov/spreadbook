@@ -162,6 +162,32 @@ export function sourceLabel(id) {
   return AML_SOURCES.find((s) => s.id === id)?.label || id
 }
 
+// Canonical allowlist: well-known legitimate contracts that must NEVER be
+// flagged, no matter what any API reports (e.g. Tronscan reports
+// is_black_list=true on the USDT contract itself because the token
+// *administers* a blacklist — not because it is blocked).
+const CANONICAL = {
+  'tr7nhqjekqxgtci8q8zy4pl8otszgjlj6t': 'Tether USDT · официальный контракт TRC-20',
+  '0xdac17f958d2e523b2ee19b794b234232b16a0b7383cc': 'Tether USDT · официальный контракт ERC-20',
+  '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': 'Circle USDC · официальный контракт ERC-20',
+}
+
+export function getCanonical(raw) {
+  const a = String(raw || '').trim()
+  if (!a) return null
+  const low = a.toLowerCase()
+  if (CANONICAL[low]) return CANONICAL[low]
+  // Tron hex form of the official TRC-20 contract.
+  if (detectNetwork(a) === 'tron') {
+    try {
+      if (tronToHex(a) === tronToHex(USDT_TRON)) return CANONICAL[USDT_TRON.toLowerCase()]
+    } catch {
+      /* ignore */
+    }
+  }
+  return null
+}
+
 // Pure list lookup. Returns { network, verdict: 'bad'|'clean'|'unknown', matches }.
 export function checkAddress(raw, index) {
   const addr = String(raw || '').trim()
