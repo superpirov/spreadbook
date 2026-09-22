@@ -65,9 +65,14 @@ export async function analyzeKyt(address, index, self, opts = {}) {
   }
   for (const m of self?.matches || []) {
     if (m.source === 'TETHER_FROZEN') continue // counted above
+    if (m.source === 'TRONSCAN_RISK') continue // weak flag, counted below
     score += 60
     add(60, `Адрес в санкциях: ${m.label}`, 'Прямое совпадение с OFAC SDN')
     break
+  }
+  if ((self?.matches || []).some((m) => m.source === 'TRONSCAN_RISK')) {
+    score += 15
+    add(15, 'Tronscan: risk-флаг', 'Слабый сигнал — учитывается с малым весом')
   }
   const secHits = (self?.matches || []).filter((m) => m.source === 'TRONSCAN_SEC')
   if (secHits.length > 0) {

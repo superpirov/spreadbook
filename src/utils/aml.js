@@ -452,3 +452,39 @@ export async function checkTronSecurity(rawAddress) {
     return { flags: [], error: 'Tronscan Security: плохой ответ' }
   }
 }
+
+// --- Tronscan account profile: risk flag + activity tags (FREE, no key) ---
+// GET /api/account/list?address= → normalAddressInfo.{addr}.risk (bool).
+// GET /api/account/tag?address= → chainTags (High Balance, activity tags…).
+// NOTE: risk=false even on Tether-frozen addresses — this is NOT a freeze
+// detector. The live isBlackListed check stays authoritative for freezes.
+// Returns { risk, tags[], error }.
+
+export async function checkTronProfile(rawAddress) {
+  const a = String(rawAddress || '').trim()
+  if (detectNetwork(a) !== 'tron') return { risk: false, tags: [], error: null }
+  let risk = false
+  let tags = []
+  let error = null
+  try {
+    const res = await fetch(`https://apilist.tronscanapi.com/api/account/list?address=${a}&limit=1`)
+    if (!res.ok) throw new Error(`account/list: HTTP ${res.status}`)
+    const j = await res.json()
+    risk = j?.normalAddressInfo?.[a]?.risk === true
+  } catch (e) {
+    error = e.message || 'account/list: сеть'
+  }
+  try {
+    const res = await fetch(`https://apilist.tronscanapi.com/api/account/tag?address=${a}`)
+    if (!res.ok) throw new Error(`account/tag: HTTP ${res.status}`)
+    const j = await res.json()
+    const ct = j?.chainTags || {}
+    tags = Object.values(ct)
+      .flat()
+      .map((t) => t?.tagName)
+      .filter(Boolean)
+  } catch (e) {
+    error = [error, e.message || 'account/tag: сеть'].filter(Boolean).join('; ')
+  }
+  return { risk, tags, error }
+}

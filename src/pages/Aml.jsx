@@ -14,6 +14,7 @@ import {
   checkAddress,
   checkTetherFrozen,
   checkTronSecurity,
+  checkTronProfile,
   getCanonical,
   getCommunityIndex,
   getStaticIndex,
@@ -166,10 +167,14 @@ export default function Aml() {
       const { flags: secFlags, error: secError } = (!canonical && base.network === 'tron')
         ? await checkTronSecurity(a)
         : { flags: [], error: null }
+      const { risk: tronRisk, tags: tronTags } = (!canonical && base.network === 'tron')
+        ? await checkTronProfile(a)
+        : { risk: false, tags: [] }
       const matches = [...base.matches, ...secFlags]
       if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
+      if (tronRisk === true) matches.push({ source: 'TRONSCAN_RISK', label: 'Tronscan: risk-флаг' })
       const verdict = matches.length > 0 ? 'bad' : base.verdict
-      const r = { address: base.address, network: base.network, verdict, matches, frozen, rpcError: rpcError || '', secError: secError || '', canonical: canonical || '', cached: false, kyt: null }
+      const r = { address: base.address, network: base.network, verdict, matches, frozen, tags: tronTags, rpcError: rpcError || '', secError: secError || '', canonical: canonical || '', cached: false, kyt: null }
       if (mode === 'deep') {
         if (base.network !== 'tron') {
           setError('Глубокая проверка (KYT-лайт) пока работает только для сети TRON. Для этого адреса доступна быстрая проверка.')
@@ -189,7 +194,7 @@ export default function Aml() {
         }
       }
       setResult(r)
-      await logAmlCheck({ address: r.address, network: r.network, verdict: r.verdict, matches, frozen, depth: mode === 'deep' ? depth : 0, counterparty: '', kyt: r.kyt })
+      await logAmlCheck({ address: r.address, network: r.network, verdict: r.verdict, matches, frozen, tags: r.tags, depth: mode === 'deep' ? depth : 0, counterparty: '', kyt: r.kyt })
     } finally {
       setChecking(false)
       setDeepStage('')
@@ -579,6 +584,11 @@ export function VerdictCard({ r }) {
       {r.canonical && (
         <p className="mt-2 rounded-xl bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
           ✓ Официальный контракт: {r.canonical} — метки API для него игнорируются.
+        </p>
+      )}
+      {r.tags?.length > 0 && (
+        <p className="mt-2 text-xs text-slate-400">
+          Метки Tronscan: {r.tags.map((t) => <span key={t} className="mr-1 inline-block rounded-md bg-white/5 px-1.5 py-0.5">{t}</span>)}
         </p>
       )}
       {r.matches.length > 0 && (

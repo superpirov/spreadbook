@@ -11,6 +11,7 @@ import {
   checkAddress,
   checkTetherFrozen,
   checkTronSecurity,
+  checkTronProfile,
   getCanonical,
   getCommunityIndex,
   getStaticIndex,
@@ -111,8 +112,12 @@ export default function CounterpartyList() {
         const { flags: secFlags } = (!canonical && base.network === 'tron')
           ? await checkTronSecurity(a)
           : { flags: [], error: null }
+        const { risk: tronRisk } = (!canonical && base.network === 'tron')
+          ? await checkTronProfile(a)
+          : { risk: false }
         const matches = [...base.matches, ...secFlags]
         if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
+        if (tronRisk === true) matches.push({ source: 'TRONSCAN_RISK', label: 'Tronscan: risk-флаг' })
         const verdict = matches.length > 0 ? 'bad' : base.verdict
         out.push({ address: a, network: base.network, verdict, matches, rpcError: rpcError || '', canonical: canonical || '' })
         await logAmlCheck({ address: a, network: base.network, verdict, matches, frozen, counterparty: selected })
