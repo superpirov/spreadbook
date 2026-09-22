@@ -11,7 +11,9 @@ import {
   checkAddress,
   checkTetherFrozen,
   checkTronSecurity,
+  checkBitcoinAbuse,
   getCanonical,
+  getCommunityIndex,
   findRecentCheck,
   checksUsedToday,
 } from '../utils/aml.js'
@@ -91,6 +93,7 @@ export default function CounterpartyList() {
     try {
       let idx = getCachedLists()
       if (!idx) idx = await refreshLists()
+      const comm = getCommunityIndex().index
       const out = []
       for (const a of addrs) {
         // Fresh cached verdict — free, no quota spent.
@@ -99,7 +102,7 @@ export default function CounterpartyList() {
           out.push({ ...recent })
           continue
         }
-        const base = checkAddress(a, idx.index)
+        const base = checkAddress(a, idx.index, comm)
         const canonical = getCanonical(a)
         const { frozen, error: rpcError } = (!canonical && (base.network === 'evm' || base.network === 'tron'))
           ? await checkTetherFrozen(a)
@@ -107,8 +110,12 @@ export default function CounterpartyList() {
         const { flags: secFlags } = (!canonical && base.network === 'tron')
           ? await checkTronSecurity(a)
           : { flags: [], error: null }
+        const { count: abuseCount } = (!canonical && base.network === 'btc')
+          ? await checkBitcoinAbuse(a)
+          : { count: 0 }
         const matches = [...base.matches, ...secFlags]
         if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
+        if (abuseCount > 0) matches.push({ source: 'BITCOINABUSE', label: `bitcoinabuse: жалоб ${abuseCount}` })
         const verdict = matches.length > 0 ? 'bad' : base.verdict
         out.push({ address: a, network: base.network, verdict, matches, rpcError: rpcError || '', canonical: canonical || '' })
         await logAmlCheck({ address: a, network: base.network, verdict, matches, frozen, counterparty: selected })

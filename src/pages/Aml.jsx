@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ShieldCheck, ShieldAlert, ShieldQuestion, RefreshCw, ExternalLink, Trash2, ScanSearch, Database, Copy, Check, Search } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, ShieldQuestion, RefreshCw, ExternalLink, Trash2, ScanSearch, Database, Copy, Check, Search, Flag } from 'lucide-react'
 import { useStore } from '../store/useStore.js'
-import { useCurrentSub } from '../store/useAuth.js'
+import { useAuth, useCurrentSub } from '../store/useAuth.js'
+import { fetchApprovedReports, submitReport } from '../utils/users.js'
 import { getAccessState } from '../utils/billing.js'
 import {
   AML_SOURCES,
@@ -13,7 +14,10 @@ import {
   checkAddress,
   checkTetherFrozen,
   checkTronSecurity,
+  checkBitcoinAbuse,
   getCanonical,
+  getCommunityIndex,
+  saveCommunityIndex,
   findRecentCheck,
   explorerUrl,
   checksUsedToday,
@@ -28,9 +32,11 @@ export default function Aml() {
   const logAmlCheck = useStore((s) => s.logAmlCheck)
   const clearAmlHistory = useStore((s) => s.clearAmlHistory)
   const sub = useCurrentSub()
+  const user = useAuth((s) => s.user)
   const isPro = getAccessState(sub).status === 'pro'
 
   const [lists, setLists] = useState(() => getCachedLists())
+  const [community, setCommunity] = useState(() => getCommunityIndex())
   const [refreshing, setRefreshing] = useState(false)
   const [refreshMsg, setRefreshMsg] = useState('')
   const [addr, setAddr] = useState('')
@@ -41,6 +47,10 @@ export default function Aml() {
   const [depth, setDepth] = useState(1) // BFS depth for deep mode
   const [deepStage, setDeepStage] = useState('')
   const [copiedId, setCopiedId] = useState(null)
+  const [showReport, setShowReport] = useState(false)
+  const [reason, setReason] = useState('')
+  const [reportMsg, setReportMsg] = useState('')
+  const [reportBusy, setReportBusy] = useState(false)
 
   const copyAddr = async (e, h) => {
     e.stopPropagation()
@@ -77,7 +87,16 @@ export default function Aml() {
     try {
       const d = await refreshLists()
       setLists(d)
-      setRefreshMsg(`Базы обновлены: ${d.total.toLocaleString('ru-RU')} адресов.` + (d.errors.length ? ` Не загрузились: ${d.errors.join(', ')} (остались прошлые данные).` : ''))
+      let commMsg = ''
+      try {
+        const approved = await fetchApprovedReports()
+        const c = saveCommunityIndex(approved)
+        setCommunity(c)
+        commMsg = ` Сообщество: ${c.total} меток.`
+      } catch {
+        commMsg = ' Метки сообщества не обновились (нет доступа к облаку).'
+      }
+      setRefreshMsg(`Базы обновлены: ${d.total.toLocaleString('ru-RU')} адресов.` + (d.errors.length ? ` Не загрузились: ${d.errors.join(', ')} (остались прошлые данные).` : '') + commMsg)
     } catch (e) {
       setRefreshMsg(e.message)
     } finally {
@@ -85,10 +104,29 @@ export default function Aml() {
     }
   }
 
+  const sendReport = async (e) => {
+    e.preventDefault()
+    if (!result || reportBusy) return
+    setReportBusy(true)
+    setReportMsg('')
+    try {
+      await submitReport({ address: result.address, network: result.network, reason, reporter: user?.email || '' })
+      setReportMsg('Жалоба отправлена на модерацию. После одобрения метка появится у всех пользователей.')
+      setReason('')
+      setShowReport(false)
+    } catch (err) {
+      setReportMsg(err.message || 'Не удалось отправить жалобу.')
+    } finally {
+      setReportBusy(false)
+    }
+  }
+
   const run = async (e) => {
     e.preventDefault()
     setError('')
     setResult(null)
+    setShowReport(false)
+    setReportMsg('')
     const a = addr.trim()
     if (!a) return
     // Fresh cached verdict — instant, free, no quota spent.
@@ -117,7 +155,7 @@ export default function Aml() {
     setChecking(true)
     setDeepStage('')
     try {
-      const base = checkAddress(a, idx.index)
+      const base = checkAddress(a, idx.index, community.index)
       // Canonical contracts skip live/security checks — their flags are meaningless.
       const canonical = getCanonical(a)
       const { frozen, error: rpcError } = (!canonical && (base.network === 'evm' || base.network === 'tron'))
@@ -126,8 +164,12 @@ export default function Aml() {
       const { flags: secFlags, error: secError } = (!canonical && base.network === 'tron')
         ? await checkTronSecurity(a)
         : { flags: [], error: null }
+      const { count: abuseCount } = (!canonical && base.network === 'btc')
+        ? await checkBitcoinAbuse(a)
+        : { count: 0 }
       const matches = [...base.matches, ...secFlags]
       if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
+      if (abuseCount > 0) matches.push({ source: 'BITCOINABUSE', label: `bitcoinabuse: жалоб ${abuseCount}` })
       const verdict = matches.length > 0 ? 'bad' : base.verdict
       const r = { address: base.address, network: base.network, verdict, matches, frozen, rpcError: rpcError || '', secError: secError || '', canonical: canonical || '', cached: false, kyt: null }
       if (mode === 'deep') {
@@ -138,6 +180,7 @@ export default function Aml() {
           try {
             r.kyt = await analyzeKyt(a, idx.index, { verdict, matches, frozen }, {
               depth,
+              community: community.index,
               onProgress: ({ stage, done, total }) => setDeepStage(total > 1 ? `${stage} (${done}/${total})` : stage),
             })
             if (r.kyt.score >= 51 && r.verdict === 'clean') r.verdict = 'bad'
@@ -180,6 +223,9 @@ export default function Aml() {
                 {s.id}: {(lists.counts[s.id] ?? 0).toLocaleString('ru-RU')}
               </span>
             ))}
+            <span className="rounded-lg bg-brand/15 px-2 py-1 text-brand-soft" title="Метки сообщества (модерируются)">
+              👥 сообщество: {(community.total ?? 0).toLocaleString('ru-RU')}
+            </span>
           </div>
         ) : (
           <p className="mt-2 text-xs text-slate-500">Базы ещё не загружены — нажмите «Обновить базы» (нужен интернет, ~40 КБ).</p>
@@ -252,6 +298,31 @@ export default function Aml() {
         )}
         {result && <VerdictCard r={result} />}
         {result?.kyt && <KytReport address={result.address} kyt={result.kyt} />}
+        {result && result.verdict !== 'unknown' && (
+          <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+            {!showReport ? (
+              <button onClick={() => setShowReport(true)} className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200">
+                <Flag size={13} /> Знаете этот адрес как мошеннический? Пожаловаться
+              </button>
+            ) : (
+              <form onSubmit={sendReport} className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  className="input"
+                  placeholder="Причина: скам, фишинг, взлом…"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                />
+                <div className="flex shrink-0 gap-2">
+                  <button type="submit" disabled={reportBusy || !reason.trim()} className="btn-primary px-3 py-2 text-xs">
+                    {reportBusy ? 'Отправка…' : 'Отправить'}
+                  </button>
+                  <button type="button" onClick={() => setShowReport(false)} className="btn-ghost px-3 py-2 text-xs">✕</button>
+                </div>
+              </form>
+            )}
+            {reportMsg && <p className="mt-2 text-xs text-slate-300">{reportMsg}</p>}
+          </div>
+        )}
       </form>
 
       <div className="card overflow-hidden">

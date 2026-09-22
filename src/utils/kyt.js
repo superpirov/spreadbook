@@ -51,6 +51,7 @@ function toUsdtish(t) {
 // Returns report { score, level, depth, exposurePct, factors[], stats, dirtyPeers[], generatedAt }.
 export async function analyzeKyt(address, index, self, opts = {}) {
   const a = String(address).trim()
+  const community = opts.community || null
   const factors = []
   const add = (points, label, detail = '') => {
     if (points > 0) factors.push({ points, label, detail })
@@ -159,13 +160,23 @@ export async function analyzeKyt(address, index, self, opts = {}) {
       visited.add(peer)
       return
     }
-    if (visited.has(peer) || detectNetwork(peer) !== 'tron' || !index) return
+    if (visited.has(peer) || detectNetwork(peer) !== 'tron' || (!index && !community)) return
     visited.add(peer)
-    for (const key of lookupKeys(peer)) {
-      const src = index[key]
-      if (src) {
-        dirtyPeers.push({ address: peer, hop, source: src, label: sourceLabel(src) })
-        break
+    if (index) {
+      for (const key of lookupKeys(peer)) {
+        const src = index[key]
+        if (src) {
+          dirtyPeers.push({ address: peer, hop, source: src, label: sourceLabel(src) })
+          break
+        }
+      }
+    }
+    if (community) {
+      for (const key of lookupKeys(peer)) {
+        if (community[key]) {
+          dirtyPeers.push({ address: peer, hop, source: 'COMMUNITY', label: `Жалоба сообщества: ${community[key]}` })
+          break
+        }
       }
     }
   }

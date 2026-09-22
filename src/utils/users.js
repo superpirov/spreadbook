@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, updateDoc, collection, getDocs, serverTimestamp } from 'firebase/firestore'
+import { doc, getDoc, setDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, query, where, limit, serverTimestamp } from 'firebase/firestore'
 import { db } from './firebase.js'
 
 // Firestore user registry: collection "users", doc id = Firebase uid.
@@ -73,4 +73,47 @@ export async function adjustMonths(uid, currentExpiresAt, deltaMonths) {
 
 export async function setPlanPro(uid, expiresAt, note = '') {
   await updateDoc(userDoc(uid), { plan: 'pro', expiresAt, updatedAt: serverTimestamp(), adminNote: note || null })
+}
+
+// --- Community scam reports (shared blacklist with admin moderation) ---
+// Collection "reports": { address, network, reason, reporter, status, createdAt }.
+// status: pending | approved | rejected. Approved entries merge into every
+// user's local screening index (see aml.js community helpers).
+
+const reportsCol = () => collection(db, 'reports')
+
+export async function submitReport({ address, network, reason, reporter }) {
+  const clean = String(address || '').trim()
+  if (!clean) throw new Error('Пустой адрес')
+  await addDoc(reportsCol(), {
+    address: clean,
+    network: network || 'unknown',
+    reason: String(reason || '').trim().slice(0, 500),
+    reporter: reporter || '',
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+  })
+}
+
+export async function fetchReports(status = 'pending') {
+  // No orderBy: where+orderBy on different fields would require a composite
+  // index. Sort client-side instead.
+  const q = query(reportsCol(), where('status', '==', status), limit(200))
+  const snap = await getDocs(q)
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+}
+
+export async function moderateReport(id, status) {
+  if (!['approved', 'rejected'].includes(status)) return
+  await updateDoc(doc(db, 'reports', id), { status, updatedAt: serverTimestamp() })
+}
+
+export async function deleteReport(id) {
+  await deleteDoc(doc(db, 'reports', id))
+}
+
+export async function fetchApprovedReports() {
+  return fetchReports('approved')
 }

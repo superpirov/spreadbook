@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ShieldAlert, Minus, Plus, ExternalLink, RefreshCw } from 'lucide-react'
+import { ShieldAlert, Minus, Plus, ExternalLink, RefreshCw, Flag, Check, X, Trash2 } from 'lucide-react'
 import { useAuth } from '../store/useAuth.js'
 import { isAdmin } from '../utils/admin.js'
-import { fetchAllUsers, adjustMonths } from '../utils/users.js'
+import { fetchAllUsers, adjustMonths, fetchReports, moderateReport, deleteReport } from '../utils/users.js'
 import { getAccessState, tronscanUrl } from '../utils/billing.js'
 import { formatDate, formatDateTime } from '../utils/formatters.js'
 
@@ -15,6 +15,17 @@ export default function Admin() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busyUid, setBusyUid] = useState(null)
+  const [reports, setReports] = useState([])
+  const [reportsError, setReportsError] = useState('')
+
+  const loadReports = useCallback(async () => {
+    try {
+      setReports(await fetchReports('pending'))
+      setReportsError('')
+    } catch {
+      setReportsError('Жалобы не загрузились — проверьте rules для коллекции reports.')
+    }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -29,9 +40,30 @@ export default function Admin() {
   }, [])
 
   useEffect(() => {
-    if (isAdmin(user)) load()
-    else setLoading(false)
-  }, [user, load])
+    if (isAdmin(user)) {
+      load()
+      loadReports()
+    } else setLoading(false)
+  }, [user, load, loadReports])
+
+  const moderate = async (id, status) => {
+    try {
+      await moderateReport(id, status)
+      setReports((list) => list.filter((r) => r.id !== id))
+    } catch {
+      setReportsError('Не удалось обновить жалобу.')
+    }
+  }
+
+  const remove = async (id) => {
+    if (!window.confirm('Удалить жалобу?')) return
+    try {
+      await deleteReport(id)
+      setReports((list) => list.filter((r) => r.id !== id))
+    } catch {
+      setReportsError('Не удалось удалить жалобу.')
+    }
+  }
 
   if (!isAdmin(user)) {
     return (
@@ -173,6 +205,34 @@ export default function Admin() {
       <p className="text-[11px] text-slate-500">
         Добавление месяцев продлевает PRO от max(сейчас, текущий срок). Убавление сдвигает срок назад. Изменения применяются у пользователя при следующем входе/обновлении (подписка подтягивается из облака).
       </p>
+
+      <div className="card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+          <h3 className="flex items-center gap-2 text-sm font-bold"><Flag size={15} /> Жалобы на адреса ({reports.length})</h3>
+          <button onClick={loadReports} className="btn-ghost px-3 py-1.5 text-xs">
+            <RefreshCw size={13} /> Обновить
+          </button>
+        </div>
+        {reportsError && <p className="px-4 py-2 text-xs text-red-300">{reportsError}</p>}
+        {reports.length === 0 ? (
+          <p className="px-4 py-8 text-center text-sm text-slate-500">Новых жалоб нет. Одобренные метки расходятся всем пользователям при обновлении баз.</p>
+        ) : (
+          <div className="divide-y divide-white/5">
+            {reports.map((r) => (
+              <div key={r.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-sm">
+                <code className="min-w-0 flex-1 break-all font-mono text-xs text-slate-200" title={r.address}>{r.address}</code>
+                <span className="max-w-[220px] truncate text-xs text-slate-400" title={r.reason}>{r.reason || 'без причины'}</span>
+                <span className="max-w-[160px] truncate text-[11px] text-slate-500">{r.reporter || ''} · {r.createdAt ? formatDate(r.createdAt) : ''}</span>
+                <span className="flex gap-1.5">
+                  <button onClick={() => moderate(r.id, 'approved')} title="Одобрить — метка разойдётся всем" className="rounded-lg bg-emerald-500/15 p-1.5 text-emerald-200 hover:bg-emerald-500/25"><Check size={14} /></button>
+                  <button onClick={() => moderate(r.id, 'rejected')} title="Отклонить" className="rounded-lg bg-white/5 p-1.5 text-slate-300 hover:bg-white/10"><X size={14} /></button>
+                  <button onClick={() => remove(r.id)} title="Удалить" className="rounded-lg p-1.5 text-slate-500 hover:bg-red-500/20 hover:text-red-300"><Trash2 size={14} /></button>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

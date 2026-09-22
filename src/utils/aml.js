@@ -25,6 +25,11 @@ export const AML_SOURCES = [
 const CACHE_KEY = 'spreadbook-aml-v1'
 export const TRIAL_CHECKS_PER_DAY = 3
 export const CHECK_CACHE_HOURS = 24
+const COMMUNITY_KEY = 'spreadbook-community-v1'
+
+// Owner's bitcoinabuse.com API key (free, get at bitcoinabuse.com).
+// PUBLIC BY DESIGN like the Tronscan key: read-only abuse stats.
+export const BITCOINABUSE_KEY = ''
 
 // Owner's Tronscan API key — PUBLIC BY DESIGN (shipped in frontend JS).
 // Risk is limited: read-only data API, no funds access. If the quota gets
@@ -188,8 +193,62 @@ export function getCanonical(raw) {
   return null
 }
 
+// --- Community index (crowdsourced scam addresses, admin-moderated) ---
+// Synced from Firestore `reports` (status=approved) into localStorage.
+// Merged into every lookup via the `community` param of checkAddress().
+
+export function getCommunityIndex() {
+  try {
+    const raw = localStorage.getItem(COMMUNITY_KEY)
+    const d = raw ? JSON.parse(raw) : null
+    if (!d || typeof d.index !== 'object') return { updatedAt: null, index: {} }
+    return d
+  } catch {
+    return { updatedAt: null, index: {} }
+  }
+}
+
+// entries: [{ address, reason }] — caller fetches via fetchApprovedReports().
+export function saveCommunityIndex(entries) {
+  const index = {}
+  for (const e of entries || []) {
+    const a = String(e.address || '').trim()
+    if (!a) continue
+    const net = detectNetwork(a)
+    const key = net === 'evm' ? a.toLowerCase() : a
+    if (!(key in index)) index[key] = e.reason || 'Жалоба сообщества'
+  }
+  const data = { updatedAt: new Date().toISOString(), index, total: Object.keys(index).length }
+  try {
+    localStorage.setItem(COMMUNITY_KEY, JSON.stringify(data))
+  } catch {
+    /* ignore */
+  }
+  return data
+}
+
+// --- bitcoinabuse.com (BTC only, needs BITCOINABUSE_KEY) ---
+// Returns { count, error }. count > 0 = reported as scam/ransomware/etc.
+
+export async function checkBitcoinAbuse(rawAddress) {
+  const a = String(rawAddress || '').trim()
+  if (detectNetwork(a) !== 'btc') return { count: 0, error: null }
+  if (!BITCOINABUSE_KEY) return { count: 0, error: 'Нет ключа bitcoinabuse' }
+  try {
+    const res = await fetch(
+      `https://www.bitcoinabuse.com/api/reports/check?address=${encodeURIComponent(a)}&api_token=${BITCOINABUSE_KEY}`,
+    )
+    if (!res.ok) return { count: 0, error: `bitcoinabuse: HTTP ${res.status}` }
+    const j = await res.json()
+    return { count: Number(j?.count || 0), error: null }
+  } catch {
+    return { count: 0, error: 'bitcoinabuse: сеть' }
+  }
+}
+
 // Pure list lookup. Returns { network, verdict: 'bad'|'clean'|'unknown', matches }.
-export function checkAddress(raw, index) {
+// `community` = { addressKey: reason } merged from the crowdsourced index.
+export function checkAddress(raw, index, community = null) {
   const addr = String(raw || '').trim()
   const network = detectNetwork(addr)
   if (network === 'unknown' || !index) {
@@ -200,11 +259,20 @@ export function checkAddress(raw, index) {
     const src = index[key]
     if (src && !found.includes(src)) found.push(src)
   }
+  const matches = found.map((id) => ({ source: id, label: sourceLabel(id) }))
+  if (community) {
+    for (const key of lookupKeys(addr)) {
+      if (community[key]) {
+        matches.push({ source: 'COMMUNITY', label: `Жалоба сообщества: ${community[key]}` })
+        break
+      }
+    }
+  }
   return {
     address: addr,
     network,
-    verdict: found.length > 0 ? 'bad' : 'clean',
-    matches: found.map((id) => ({ source: id, label: sourceLabel(id) })),
+    verdict: matches.length > 0 ? 'bad' : 'clean',
+    matches,
   }
 }
 
