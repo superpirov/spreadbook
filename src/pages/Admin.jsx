@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ShieldAlert, Minus, Plus, ExternalLink, RefreshCw, Flag, Check, X, Trash2 } from 'lucide-react'
+import { ShieldAlert, Minus, Plus, ExternalLink, RefreshCw, Flag, Check, X, Trash2, Search } from 'lucide-react'
 import { useAuth } from '../store/useAuth.js'
 import { isAdmin } from '../utils/admin.js'
 import { fetchAllUsers, adjustMonths, fetchReports, moderateReport, deleteReport } from '../utils/users.js'
@@ -17,6 +17,7 @@ export default function Admin() {
   const [busyUid, setBusyUid] = useState(null)
   const [reports, setReports] = useState([])
   const [reportsError, setReportsError] = useState('')
+  const [query, setQuery] = useState('')
 
   const loadReports = useCallback(async () => {
     try {
@@ -95,6 +96,11 @@ export default function Admin() {
     expired: users.filter((u) => accessOf(u).status === 'expired').length,
   }
 
+  const needle = query.trim().toLowerCase()
+  const visible = needle
+    ? users.filter((u) => `${u.name || ''} ${u.email || ''}`.toLowerCase().includes(needle))
+    : users
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -124,6 +130,20 @@ export default function Admin() {
       {error && <p className="rounded-xl bg-red-500/15 px-4 py-3 text-sm text-red-200">{error}</p>}
 
       <div className="card overflow-hidden">
+        <div className="border-b border-white/10 p-3">
+          <div className="relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Поиск по имени или почте…"
+              className="input pl-9"
+            />
+          </div>
+          {needle && (
+            <p className="px-1 pt-1.5 text-xs text-slate-500">Найдено: {visible.length} из {users.length}</p>
+          )}
+        </div>
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[860px] text-left text-sm">
             <thead>
@@ -134,7 +154,7 @@ export default function Admin() {
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => {
+              {visible.map((u) => {
                 const st = accessOf(u)
                 return (
                   <tr key={u.uid} className="border-t border-white/5 hover:bg-white/[0.03]">
@@ -172,15 +192,18 @@ export default function Admin() {
                   </tr>
                 )
               })}
-              {users.length === 0 && !loading && (
-                <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-500">Пользователей пока нет.</td></tr>
+              {visible.length === 0 && !loading && (
+                <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-500">{needle ? 'Никого не найдено.' : 'Пользователей пока нет.'}</td></tr>
               )}
             </tbody>
           </table>
         </div>
         {/* Mobile cards */}
         <div className="space-y-2 p-3 md:hidden">
-          {users.map((u) => {
+          {visible.length === 0 && !loading && (
+            <p className="py-6 text-center text-sm text-slate-500">{needle ? 'Никого не найдено.' : 'Пользователей пока нет.'}</p>
+          )}
+          {visible.map((u) => {
             const st = accessOf(u)
             return (
               <div key={u.uid} className="rounded-xl border border-white/10 bg-ink-950/60 p-3 text-sm">
