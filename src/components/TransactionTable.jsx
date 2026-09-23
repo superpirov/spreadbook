@@ -139,10 +139,12 @@ export default function TransactionTable({ deals }) {
       </div>
 
       {editing && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" onClick={() => setEditing(null)}>
-          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <DealForm initial={editing} onDone={() => setEditing(null)} />
-            <button className="btn-ghost mt-3 w-full" onClick={() => setEditing(null)}>Закрыть</button>
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70" onClick={() => setEditing(null)}>
+          <div className="grid min-h-full place-items-center p-4">
+            <div className="w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
+              <DealForm initial={editing} onDone={() => setEditing(null)} />
+              <button className="btn-ghost mt-3 w-full" onClick={() => setEditing(null)}>Закрыть</button>
+            </div>
           </div>
         </div>
       )}
