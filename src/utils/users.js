@@ -173,11 +173,17 @@ export async function fetchMyReferrals(uid) {
 }
 
 // Called when the REFEREE pays: marks their referral row as paid.
-export async function markReferralPaid(refereeUid) {
+// plan = { id, price } for the cash-bonus math.
+export async function markReferralPaid(refereeUid, plan = null) {
   const snap = await getDocs(query(referralsCol(), where('refereeUid', '==', refereeUid), limit(5)))
   if (snap.empty) return false
   // Referee can update own row (rules allow: refereeUid == auth.uid).
-  await updateDoc(snap.docs[0].ref, { status: 'paid', paidAt: new Date().toISOString() })
+  const patch = { status: 'paid', paidAt: new Date().toISOString() }
+  if (plan) {
+    patch.planId = plan.id || null
+    patch.price = Number(plan.price) || 0
+  }
+  await updateDoc(snap.docs[0].ref, patch)
   return true
 }
 
@@ -196,6 +202,41 @@ export async function claimReferralBonus(referrerUid, referralId, currentExpires
     expiresAt: next,
     updatedAt: serverTimestamp(),
   })
-  await updateDoc(ref, { claimed: true, claimedAt: new Date().toISOString() })
+  await updateDoc(ref, { bonusType: 'days', claimed: true, claimedAt: new Date().toISOString() })
   return next
+}
+
+// Called by the REFERRER to take the cash bonus instead of days.
+// Creates a payout request for the owner (manual USDT transfer).
+export async function claimReferralCash(referrerUid, referralId, payoutWallet, cashPct) {
+  const wallet = String(payoutWallet || '').trim()
+  if (!wallet) throw new Error('Укажите кошелёк для выплаты.')
+  const ref = doc(db, 'referrals', referralId)
+  const snap = await getDoc(ref)
+  const data = snap.data()
+  if (!data || data.referrerUid !== referrerUid || data.status !== 'paid' || data.claimed || data.bonusType) {
+    throw new Error('Бонус недоступен (уже забран или нет оплаты).')
+  }
+  const amount = Math.round((Number(data.price) || 0) * cashPct * 100) / 100
+  await updateDoc(ref, {
+    bonusType: 'cash',
+    cashAmount: amount,
+    cashStatus: 'pending',
+    payoutWallet: wallet,
+    claimedAt: new Date().toISOString(),
+  })
+  return amount
+}
+
+// --- Admin: cash payouts ---
+
+export async function fetchCashPayouts() {
+  const snap = await getDocs(query(referralsCol(), where('bonusType', '==', 'cash'), limit(200)))
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => new Date(b.claimedAt || 0) - new Date(a.claimedAt || 0))
+}
+
+export async function markPayoutPaid(id) {
+  await updateDoc(doc(db, 'referrals', id), { cashStatus: 'paid', paidOutAt: new Date().toISOString() })
 }

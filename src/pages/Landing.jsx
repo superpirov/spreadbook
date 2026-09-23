@@ -125,7 +125,7 @@ export default function Landing() {
         <p className="text-xs font-semibold uppercase tracking-widest text-brand-soft">Тарифы</p>
         <h2 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">Три дня — бесплатно, дальше — PRO</h2>
         <p className="mt-2 max-w-2xl text-sm text-slate-400">
-          А ещё есть реферальная программа: приводите друзей и получайте +{7} дней PRO за каждого оплатившего — без лимита.
+          А ещё есть реферальная программа: за каждого оплатившего друга — на ваш выбор +7 дней PRO или 25% деньгами.
         </p>
         <div className="mt-5 grid gap-3 md:grid-cols-3">
           <div className="card p-6">

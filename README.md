@@ -51,8 +51,9 @@ npm run deploy
 
 Без бэкенда: код `SB-XXXXXX` (из uid), ссылка `?ref=CODE#/login` (захват в `main.jsx` → localStorage → consume при регистрации).
 - `refcodes/{code}` → `{ uid }`, `referrals/{auto}` → `{ code, referrerUid, refereeUid, status: signed_up|paid, claimed }`.
-- Награда: +7 дней PRO (`REF_BONUS_DAYS` в `referral.js`) за каждого оплатившего. Оплата реферала помечает строку (`markReferralPaid` из `activatePro`), бонус ЗАБИРАЕТ реферер кнопкой (пишет свой документ + `claimed`) — сервер не нужен.
-- Страница `/app/referrals`: ссылка-копия, счётчики, список, кнопки клейма. Правила — в блоке rules выше.
+- Награда на выбор за каждого оплатившего: +7 дней PRO (`REF_BONUS_DAYS`) или 25% от его тарифа деньгами (`REF_CASH_PCT`, 19→4.75 / 132→33 USDT). Оплата реферала помечает строку (`markReferralPaid` из `activatePro` + `planId/price`).
+- Дни забираются кнопкой (пишет свой документ + `bonusType:'days'`); деньги — заявкой с кошельком (`bonusType:'cash'`, `cashStatus: pending→paid`), владелец платит вручную со своего кошелька и отмечает в админке (раздел «Выплаты рефералам»).
+- Страница `/app/referrals`: ссылка-копия, счётчики, список, кнопки клейма. Правила — в блоке rules выше (админ видит все referrals для выплат).
 
 ## Оплата (BILLING)
 
@@ -107,9 +108,9 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /referrals/{refId} {
-      allow read: if request.auth != null && resource.data.referrerUid == request.auth.uid;
+      allow read: if request.auth != null && (resource.data.referrerUid == request.auth.uid || request.auth.token.email == 'pirov.ru@yandex.ru');
       allow create: if request.auth != null && request.resource.data.refereeUid == request.auth.uid;
-      allow update: if request.auth != null && (resource.data.referrerUid == request.auth.uid || resource.data.refereeUid == request.auth.uid);
+      allow update: if request.auth != null && (resource.data.referrerUid == request.auth.uid || resource.data.refereeUid == request.auth.uid || request.auth.token.email == 'pirov.ru@yandex.ru');
       allow delete: if false;
     }
   }

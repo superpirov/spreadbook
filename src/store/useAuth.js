@@ -181,7 +181,7 @@ export const useAuth = create(
         }
         // If this user was referred, mark their referral row as paid (best-effort).
         try {
-          await markReferralPaid(id)
+          await markReferralPaid(id, plan)
         } catch {
           /* ignore */
         }

@@ -6,6 +6,7 @@
 // - Referee gets the standard trial (double-sided bonuses — later).
 
 export const REF_BONUS_DAYS = 7
+export const REF_CASH_PCT = 0.25 // 25% of the paid plan price, manual payout by owner
 const PENDING_KEY = 'spreadbook-ref'
 
 export function makeRefCode(uid) {

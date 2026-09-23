@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Users, Copy, Check, Gift, Loader2 } from 'lucide-react'
+import { Users, Copy, Check, Gift, Loader2, Banknote } from 'lucide-react'
 import { useAuth, useCurrentSub } from '../store/useAuth.js'
-import { ensureRefCode, fetchMyReferrals, claimReferralBonus } from '../utils/users.js'
-import { REF_BONUS_DAYS, refLink } from '../utils/referral.js'
+import { ensureRefCode, fetchMyReferrals, claimReferralBonus, claimReferralCash } from '../utils/users.js'
+import { REF_BONUS_DAYS, REF_CASH_PCT, refLink } from '../utils/referral.js'
 import { formatDate } from '../utils/formatters.js'
+
+const cashOf = (r) => Math.round((Number(r.price) || 0) * REF_CASH_PCT * 100) / 100
 
 export default function Referrals() {
   const user = useAuth((s) => s.user)
@@ -15,6 +17,14 @@ export default function Referrals() {
   const [copied, setCopied] = useState(false)
   const [claiming, setClaiming] = useState(null)
   const [msg, setMsg] = useState('')
+  const [cashFor, setCashFor] = useState(null) // referral id with open wallet form
+  const [wallet, setWallet] = useState(() => {
+    try {
+      return localStorage.getItem('spreadbook-payout-wallet') || ''
+    } catch {
+      return ''
+    }
+  })
 
   const load = useCallback(async () => {
     if (!user) return
@@ -50,7 +60,7 @@ export default function Referrals() {
     setMsg('')
     try {
       const next = await claimReferralBonus(user.id, r.id, sub?.expiresAt || null, REF_BONUS_DAYS)
-      setList((rows) => rows.map((x) => (x.id === r.id ? { ...x, claimed: true, claimedAt: new Date().toISOString() } : x)))
+      setList((rows) => rows.map((x) => (x.id === r.id ? { ...x, bonusType: 'days', claimed: true, claimedAt: new Date().toISOString() } : x)))
       setMsg(`+${REF_BONUS_DAYS} дней PRO начислено (до ${formatDate(next)}). Подписка обновится сразу.`)
     } catch (e) {
       setMsg(e.message || 'Не удалось забрать бонус.')
@@ -59,16 +69,40 @@ export default function Referrals() {
     }
   }
 
+  const claimCash = async (r) => {
+    if (!wallet.trim()) {
+      setMsg('Укажите кошелёк USDT (TRC-20) для выплаты.')
+      return
+    }
+    setClaiming(r.id)
+    setMsg('')
+    try {
+      const amount = await claimReferralCash(user.id, r.id, wallet.trim(), REF_CASH_PCT)
+      try {
+        localStorage.setItem('spreadbook-payout-wallet', wallet.trim())
+      } catch {
+        /* ignore */
+      }
+      setList((rows) => rows.map((x) => (x.id === r.id ? { ...x, bonusType: 'cash', cashAmount: amount, cashStatus: 'pending', payoutWallet: wallet.trim(), claimedAt: new Date().toISOString() } : x)))
+      setCashFor(null)
+      setMsg(`Заявка на выплату ${amount} USDT создана. Владелец переведёт деньги вручную и отметит выплату.`)
+    } catch (e) {
+      setMsg(e.message || 'Не удалось создать заявку.')
+    } finally {
+      setClaiming(null)
+    }
+  }
+
   const paid = list.filter((r) => r.status === 'paid')
   const pending = list.filter((r) => r.status !== 'paid')
-  const unclaimed = paid.filter((r) => !r.claimed)
+  const unclaimed = paid.filter((r) => !r.claimed && !r.bonusType)
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-extrabold tracking-tight">Реферальная программа</h1>
         <p className="text-sm text-slate-400">
-          Приглашайте друзей — за каждого оплатившего подписку получаете +{REF_BONUS_DAYS} дней PRO бесплатно.
+          За каждого оплатившего друга — на ваш выбор: +{REF_BONUS_DAYS} дней PRO или {Math.round(REF_CASH_PCT * 100)}% от его подписки деньгами. Можно чередовать.
         </p>
       </div>
 
@@ -107,26 +141,64 @@ export default function Referrals() {
         ) : (
           <div className="divide-y divide-white/5">
             {list.map((r) => (
-              <div key={r.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-sm">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-semibold">{r.refereeEmail || '—'}</div>
-                  <div className="text-xs text-slate-500">рег. {r.createdAt ? formatDate(r.createdAt) : '—'}</div>
+              <div key={r.id} className="px-4 py-2.5 text-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-semibold">{r.refereeEmail || '—'}</div>
+                    <div className="text-xs text-slate-500">рег. {r.createdAt ? formatDate(r.createdAt) : '—'}</div>
+                  </div>
+                  {r.status === 'paid' ? (
+                    <span className="rounded-md bg-amber-400/15 px-2 py-0.5 text-xs font-bold text-amber-200">Оплатил</span>
+                  ) : (
+                    <span className="rounded-md bg-white/5 px-2 py-0.5 text-xs font-bold text-slate-400">Регистрация</span>
+                  )}
+                  {r.status === 'paid' && !r.bonusType && (
+                    <>
+                      <button
+                        disabled={claiming === r.id}
+                        onClick={() => claim(r)}
+                        title={`Забрать +${REF_BONUS_DAYS} дней PRO`}
+                        className="btn-primary px-3 py-1.5 text-xs"
+                      >
+                        <Gift size={13} /> {claiming === r.id ? '…' : `+${REF_BONUS_DAYS} дней`}
+                      </button>
+                      {cashOf(r) > 0 ? (
+                        <button
+                          onClick={() => setCashFor(cashFor === r.id ? null : r.id)}
+                          title={`Забрать ${cashOf(r)} USDT деньгами`}
+                          className="btn-ghost px-3 py-1.5 text-xs"
+                        >
+                          <Banknote size={13} /> {cashOf(r)} USDT
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-slate-500" title="Сумма оплаты неизвестна (оплата до обновления)">дни доступны</span>
+                      )}
+                    </>
+                  )}
+                  {r.bonusType === 'days' && <span className="text-xs text-emerald-300">+{REF_BONUS_DAYS} дней ✓</span>}
+                  {r.bonusType === 'cash' && (
+                    <span className="text-xs text-amber-200">
+                      {r.cashAmount} USDT · {r.cashStatus === 'paid' ? 'выплачено ✓' : 'ждет выплаты'}
+                    </span>
+                  )}
                 </div>
-                {r.status === 'paid' ? (
-                  <span className="rounded-md bg-amber-400/15 px-2 py-0.5 text-xs font-bold text-amber-200">Оплатил</span>
-                ) : (
-                  <span className="rounded-md bg-white/5 px-2 py-0.5 text-xs font-bold text-slate-400">Регистрация</span>
+                {cashFor === r.id && r.status === 'paid' && !r.bonusType && (
+                  <div className="mt-2 flex flex-col gap-2 rounded-xl bg-white/[0.03] p-3 sm:flex-row">
+                    <input
+                      className="input font-mono text-xs"
+                      placeholder="Ваш USDT-кошелёк (TRC-20) для выплаты"
+                      value={wallet}
+                      onChange={(e) => setWallet(e.target.value)}
+                    />
+                    <button
+                      disabled={claiming === r.id}
+                      onClick={() => claimCash(r)}
+                      className="btn-mint shrink-0 px-3 py-2 text-xs"
+                    >
+                      {claiming === r.id ? '…' : `Получить ${cashOf(r)} USDT`}
+                    </button>
+                  </div>
                 )}
-                {r.status === 'paid' && !r.claimed && (
-                  <button
-                    disabled={claiming === r.id}
-                    onClick={() => claim(r)}
-                    className="btn-primary px-3 py-1.5 text-xs"
-                  >
-                    <Gift size={13} /> {claiming === r.id ? '…' : `+${REF_BONUS_DAYS} дней`}
-                  </button>
-                )}
-                {r.claimed && <span className="text-xs text-emerald-300">Бонус забран ✓</span>}
               </div>
             ))}
           </div>

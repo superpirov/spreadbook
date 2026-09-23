@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ShieldAlert, Minus, Plus, ExternalLink, RefreshCw, Flag, Check, X, Trash2, Search } from 'lucide-react'
+import { ShieldAlert, Minus, Plus, ExternalLink, RefreshCw, Flag, Check, X, Trash2, Search, Banknote } from 'lucide-react'
 import { useAuth } from '../store/useAuth.js'
 import { isAdmin } from '../utils/admin.js'
-import { fetchAllUsers, adjustMonths, fetchReports, moderateReport, deleteReport } from '../utils/users.js'
+import { fetchAllUsers, adjustMonths, fetchReports, moderateReport, deleteReport, fetchCashPayouts, markPayoutPaid } from '../utils/users.js'
 import { getAccessState, tronscanUrl } from '../utils/billing.js'
 import { formatDate, formatDateTime } from '../utils/formatters.js'
 
@@ -18,6 +18,17 @@ export default function Admin() {
   const [reports, setReports] = useState([])
   const [reportsError, setReportsError] = useState('')
   const [query, setQuery] = useState('')
+  const [payouts, setPayouts] = useState([])
+  const [payoutsError, setPayoutsError] = useState('')
+
+  const loadPayouts = useCallback(async () => {
+    try {
+      setPayouts(await fetchCashPayouts())
+      setPayoutsError('')
+    } catch {
+      setPayoutsError('Выплаты не загрузились — проверьте rules для коллекции referrals.')
+    }
+  }, [])
 
   const loadReports = useCallback(async () => {
     try {
@@ -44,8 +55,19 @@ export default function Admin() {
     if (isAdmin(user)) {
       load()
       loadReports()
+      loadPayouts()
     } else setLoading(false)
-  }, [user, load, loadReports])
+  }, [user, load, loadReports, loadPayouts])
+
+  const payOut = async (id) => {
+    if (!window.confirm('Отметить выплату как совершённую? Деньги уже должны быть отправлены на кошелёк.')) return
+    try {
+      await markPayoutPaid(id)
+      setPayouts((rows) => rows.map((p) => (p.id === id ? { ...p, cashStatus: 'paid', paidOutAt: new Date().toISOString() } : p)))
+    } catch {
+      setPayoutsError('Не удалось отметить выплату.')
+    }
+  }
 
   const moderate = async (id, status) => {
     try {
@@ -255,6 +277,39 @@ export default function Admin() {
             ))}
           </div>
         )}
+      </div>
+      <div className="card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+          <h3 className="flex items-center gap-2 text-sm font-bold"><Banknote size={15} /> Выплаты рефералам ({payouts.filter((p) => p.cashStatus !== 'paid').length} ждут)</h3>
+          <button onClick={loadPayouts} className="btn-ghost px-3 py-1.5 text-xs">
+            <RefreshCw size={13} /> Обновить
+          </button>
+        </div>
+        {payoutsError && <p className="px-4 py-2 text-xs text-red-300">{payoutsError}</p>}
+        {payouts.length === 0 ? (
+          <p className="px-4 py-8 text-center text-sm text-slate-500">Заявок на денежные выплаты пока нет.</p>
+        ) : (
+          <div className="divide-y divide-white/5">
+            {payouts.map((p) => (
+              <div key={p.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-sm">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-semibold">{p.refereeEmail || '—'} <span className="font-normal text-slate-500">→ реферер {p.code}</span></div>
+                  <code className="block truncate font-mono text-xs text-emerald-200" title={p.payoutWallet}>{p.payoutWallet}</code>
+                  <div className="text-[11px] text-slate-500">заявка {p.claimedAt ? formatDate(p.claimedAt) : '—'}</div>
+                </div>
+                <span className="rounded-md bg-amber-400/15 px-2 py-0.5 text-xs font-bold text-amber-200">{p.cashAmount} USDT</span>
+                {p.cashStatus === 'paid' ? (
+                  <span className="text-xs text-emerald-300">Выплачено ✓</span>
+                ) : (
+                  <button onClick={() => payOut(p.id)} className="btn-mint px-3 py-1.5 text-xs">Выплачено</button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="border-t border-white/5 px-4 py-2 text-[11px] text-slate-500">
+          Переведите USDT вручную на указанный кошелёк и нажмите «Выплачено». 25% считаются от тарифа реферала.
+        </p>
       </div>
     </div>
   )
