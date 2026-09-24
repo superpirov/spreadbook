@@ -195,8 +195,8 @@ function ExKeysCard() {
                   placeholder={f === 'apiKey' ? 'API Key' : f === 'apiSecret' ? 'API Secret' : 'Токен'}
                   className="input font-mono text-xs"
                   value={drafts[ex.id]?.[f] ?? (keys[ex.id]?.[f] ? '••••••••' : '')}
-                  onChange={(e) => set(e, f, e.target.value)}
-                  onFocus={(e) => { if (e.target.value === '••••••••') set(ex, f, '') }}
+                  onChange={(e) => set(ex.id, f, e.target.value)}
+                  onFocus={(e) => { if (e.target.value === '••••••••') set(ex.id, f, '') }}
                 />
               ))}
             </div>
