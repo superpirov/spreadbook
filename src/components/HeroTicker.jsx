@@ -15,13 +15,7 @@ const COINS = [
   { id: 'ethereum', s: 'ETH/RUB', cur: 'rub', dp: 0 },
 ]
 
-const HERO_VIDEO = {
-  poster: 'https://cdn.pixabay.com/video/2024/03/15/204306-923909642_tiny.jpg',
-  sources: [
-    'https://cdn.pixabay.com/video/2024/03/15/204306-923909642_medium.mp4',
-    'https://cdn.pixabay.com/video/2024/03/15/204306-923909642_small.mp4',
-  ],
-}
+const HERO_VIDEO = `${import.meta.env.BASE_URL}hero-market.mp4`
 
 const SEED = [
   { s: 'BTC/USDT', p: 67412.5, c: 1.8 },
@@ -96,7 +90,7 @@ export default function HeroTicker() {
 
   return (
     <section className="card relative overflow-hidden p-6 sm:p-8">
-      {/* Market video background + readability overlay */}
+      {/* Local market video background + strong readability overlay */}
       <video
         className="hero-video pointer-events-none absolute inset-0 h-full w-full object-cover"
         autoPlay
@@ -104,14 +98,10 @@ export default function HeroTicker() {
         loop
         playsInline
         preload="metadata"
-        poster={HERO_VIDEO.poster}
-      >
-        {HERO_VIDEO.sources.map((src) => (
-          <source key={src} src={src} type="video/mp4" />
-        ))}
-      </video>
-      <div className="pointer-events-none absolute inset-0 bg-ink-950/75" />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-brand/25 via-transparent to-mint/20" />
+        src={HERO_VIDEO}
+      />
+      <div className="pointer-events-none absolute inset-0 bg-ink-950/90" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-brand/30 via-ink-950/40 to-mint/25" />
       <div className="relative grid items-center gap-6 md:grid-cols-[1.1fr_0.9fr]">
         <div>
           <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
