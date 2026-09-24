@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Pencil, Trash2, Search } from 'lucide-react'
+import { Pencil, Trash2, Search, Copy } from 'lucide-react'
 import { useStore } from '../store/useStore.js'
 import { formatDateTime, formatMoney } from '../utils/formatters.js'
 import { dealFiatTotal } from '../utils/calculations.js'
@@ -85,6 +85,7 @@ export default function TransactionTable({ deals }) {
                 <td className="px-4 py-2.5"><span className="rounded-md bg-white/5 px-2 py-0.5 text-xs">{d.platform}</span></td>
                 <td className="max-w-[160px] truncate px-4 py-2.5 text-slate-300">{d.counterparty || '—'}</td>
                 <td className="whitespace-nowrap px-4 py-2.5 text-right">
+                  <button className="mr-1 rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white" onClick={() => setEditing({ ...d, id: null })} title="Дублировать"><Copy size={15} /></button>
                   <button className="mr-1 rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white" onClick={() => setEditing(d)} title="Редактировать"><Pencil size={15} /></button>
                   <button
                     className="rounded-lg p-1.5 text-slate-400 hover:bg-red-500/20 hover:text-red-300"
@@ -121,6 +122,7 @@ export default function TransactionTable({ deals }) {
             <div className="mt-1 flex items-center justify-between text-xs text-slate-400">
               <span>{d.platform} · {d.counterparty || '—'}</span>
               <span className="flex gap-1">
+                <button className="rounded-lg p-1.5 hover:bg-white/10" onClick={() => setEditing({ ...d, id: null })} title="Дублировать"><Copy size={14} /></button>
                 <button className="rounded-lg p-1.5 hover:bg-white/10" onClick={() => setEditing(d)}><Pencil size={14} /></button>
                 <button className="rounded-lg p-1.5 hover:bg-red-500/20" onClick={() => { if (window.confirm('Удалить сделку?')) deleteDeal(d.id) }}><Trash2 size={14} /></button>
               </span>

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Star, User, UserPlus, Trash2, Wallet, CreditCard, Phone, Landmark, ScanSearch } from 'lucide-react'
+import { Star, User, UserPlus, Trash2, Wallet, CreditCard, Phone, Landmark, ScanSearch, Ban } from 'lucide-react'
 import { useStore } from '../store/useStore.js'
 import { useCurrentSub } from '../store/useAuth.js'
 import { getAccessState } from '../utils/billing.js'
@@ -19,7 +19,7 @@ import {
   checksUsedToday,
 } from '../utils/aml.js'
 import { VerdictDot } from '../pages/Aml.jsx'
-import { dealFiatTotal, dealNetValue } from '../utils/calculations.js'
+import { dealFiatTotal, dealNetValue, counterpartySpread } from '../utils/calculations.js'
 import { formatMoney, formatDateTime } from '../utils/formatters.js'
 
 export default function CounterpartyList() {
@@ -31,6 +31,8 @@ export default function CounterpartyList() {
   const setProfile = useStore((s) => s.setProfile)
   const addCounterparty = useStore((s) => s.addCounterparty)
   const deleteCounterparty = useStore((s) => s.deleteCounterparty)
+  const blacklist = useStore((s) => s.blacklist)
+  const toggleBlacklist = useStore((s) => s.toggleBlacklist)
   const aml = useStore((s) => s.aml)
   const amlHistory = useStore((s) => s.amlHistory)
   const setAmlStatus = useStore((s) => s.setAmlStatus)
@@ -163,7 +165,11 @@ export default function CounterpartyList() {
     // Include explicitly added counterparties even before their first deal.
     for (const n of knownCounterparties) touch(n)
     return [...map.values()]
-      .map((e) => ({ ...e, deals: e.deals.sort((a, b) => new Date(b.datetime) - new Date(a.datetime)) }))
+      .map((e) => ({
+        ...e,
+        deals: e.deals.sort((a, b) => new Date(b.datetime) - new Date(a.datetime)),
+        spread: counterpartySpread(e.deals),
+      }))
       .sort((a, b) => b.volume - a.volume)
   }, [deals, knownCounterparties])
 
@@ -204,7 +210,12 @@ export default function CounterpartyList() {
                   <VerdictDot verdict={aml[s.name]?.status || 'clean'} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold">{s.name}</span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="block truncate text-sm font-semibold">{s.name}</span>
+                    {blacklist.includes(s.name) && (
+                      <span className="shrink-0 rounded bg-red-500/20 px-1.5 py-px text-[10px] font-bold text-red-300">ЧС</span>
+                    )}
+                  </span>
                   <span className="block text-xs text-slate-400">
                     {s.deals.length} сделок · {formatMoney(s.volume)}
                     {r?.rating ? ` · ${'★'.repeat(r.rating)}` : ''}
@@ -238,6 +249,13 @@ export default function CounterpartyList() {
                   onRate={(v) => setRating(sel.name, v, ratings[sel.name]?.note || draft.note)}
                 />
                 <button
+                  className={`rounded-lg p-2 transition ${blacklist.includes(sel.name) ? 'bg-red-500/25 text-red-200' : 'text-slate-500 hover:bg-white/10 hover:text-red-300'}`}
+                  title={blacklist.includes(sel.name) ? 'Убрать из чёрного списка' : 'В чёрный список'}
+                  onClick={() => toggleBlacklist(sel.name)}
+                >
+                  <Ban size={17} />
+                </button>
+                <button
                   className="rounded-lg p-2 text-slate-500 hover:bg-red-500/20 hover:text-red-300"
                   title="Удалить контрагента"
                   onClick={remove}
@@ -246,6 +264,26 @@ export default function CounterpartyList() {
                 </button>
               </div>
             </div>
+            {blacklist.includes(sel.name) && (
+              <p className="mt-2 rounded-xl bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-200">
+                В чёрном списке — сделки с этим человеком подсвечиваются при вводе.
+              </p>
+            )}
+            {sel.spread.avg !== null ? (
+              <div className="mt-2 rounded-xl bg-white/[0.03] px-3 py-2 text-xs">
+                <span className="text-slate-400">Средний спред: </span>
+                <b className={sel.spread.avg >= 0 ? 'text-emerald-300' : 'text-red-300'}>
+                  {sel.spread.avg >= 0 ? '+' : ''}{sel.spread.avg}%
+                </b>
+                {sel.spread.perAsset.length > 1 && (
+                  <span className="text-slate-500">
+                    {' '}({sel.spread.perAsset.map((p) => `${p.asset} ${p.spread >= 0 ? '+' : ''}${p.spread}%`).join(' · ')})
+                  </span>
+                )}
+              </div>
+            ) : (
+              <p className="mt-2 text-[11px] text-slate-500">Спред появится, когда будут и покупки, и продажи.</p>
+            )}
 
             <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
               <h4 className="mb-3 text-sm font-bold">Реквизиты и заметки</h4>

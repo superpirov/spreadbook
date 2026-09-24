@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ShieldCheck, ShieldAlert, ShieldQuestion, RefreshCw, ExternalLink, Trash2, ScanSearch, Database, Copy, Check, Search, Flag } from 'lucide-react'
+import { ShieldCheck, ShieldAlert, ShieldQuestion, RefreshCw, ExternalLink, Trash2, ScanSearch, Database, Copy, Check, Search, Flag, Bell, BellOff, Eye } from 'lucide-react'
 import { useStore } from '../store/useStore.js'
 import { useAuth, useCurrentSub } from '../store/useAuth.js'
 import { fetchApprovedReports, submitReport } from '../utils/users.js'
@@ -32,6 +32,9 @@ export default function Aml() {
   const amlHistory = useStore((s) => s.amlHistory)
   const logAmlCheck = useStore((s) => s.logAmlCheck)
   const clearAmlHistory = useStore((s) => s.clearAmlHistory)
+  const watchlist = useStore((s) => s.watchlist)
+  const toggleWatch = useStore((s) => s.toggleWatch)
+  const updateWatchResult = useStore((s) => s.updateWatchResult)
   const sub = useCurrentSub()
   const user = useAuth((s) => s.user)
   const isPro = getAccessState(sub).status === 'pro'
@@ -82,6 +85,68 @@ export default function Aml() {
 
   const usedToday = checksUsedToday(amlHistory)
   const limitHit = !isPro && usedToday >= TRIAL_CHECKS_PER_DAY
+  const [watchBusy, setWatchBusy] = useState(false)
+  const [watchMsg, setWatchMsg] = useState('')
+
+  // Lightweight screening shared by manual checks and monitoring.
+  const screenOne = async (a, idx, comm) => {
+    const base = checkAddress(a, idx.index, comm)
+    const canonical = getCanonical(a)
+    const { frozen } = (!canonical && (base.network === 'evm' || base.network === 'tron'))
+      ? await checkTetherFrozen(a)
+      : { frozen: null }
+    const { flags: secFlags } = (!canonical && base.network === 'tron')
+      ? await checkTronSecurity(a)
+      : { flags: [] }
+    const matches = [...base.matches, ...secFlags]
+    if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
+    return { base, frozen, matches, verdict: matches.length > 0 ? 'bad' : base.verdict }
+  }
+
+  const recheckWatchlist = async (onlyStale = true) => {
+    if (watchBusy || watchlist.length === 0) return
+    let idx = lists
+    if (!idx) {
+      try {
+        idx = await refreshLists()
+        setLists(idx)
+      } catch {
+        setWatchMsg('Не удалось загрузить базы для перепроверки.')
+        return
+      }
+    }
+    const comm = getCommunityIndex().index
+    setWatchBusy(true)
+    setWatchMsg('')
+    try {
+      const now = Date.now()
+      for (const w of watchlist) {
+        const stale = !w.lastCheck || now - new Date(w.lastCheck).getTime() > 24 * 3600 * 1000
+        if (onlyStale && !stale) continue
+        if (!isPro && checksUsedToday(useStore.getState().amlHistory) >= TRIAL_CHECKS_PER_DAY) {
+          setWatchMsg('Достигнут дневной лимит триала — остальное проверится завтра или на PRO.')
+          break
+        }
+        try {
+          const r = await screenOne(w.address, idx, comm)
+          await updateWatchResult(w.address, r.verdict)
+          if (r.verdict !== w.lastVerdict && w.lastVerdict) {
+            await logAmlCheck({ address: w.address, network: r.base.network, verdict: r.verdict, matches: r.matches, frozen: r.frozen, counterparty: '', note: 'мониторинг: статус изменился' })
+          }
+        } catch {
+          /* skip failed address */
+        }
+      }
+    } finally {
+      setWatchBusy(false)
+    }
+  }
+
+  // Auto recheck stale entries when opening the page.
+  useEffect(() => {
+    if (lists && watchlist.length > 0) recheckWatchlist(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lists])
 
   const doRefresh = async () => {
     setRefreshing(true)
@@ -311,7 +376,53 @@ export default function Aml() {
             {reportMsg && <p className="mt-2 text-xs text-slate-300">{reportMsg}</p>}
           </div>
         )}
+        {result && (
+          <button
+            type="button"
+            onClick={() => toggleWatch(result.address, result.network)}
+            className="mt-2 inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white"
+          >
+            {watchlist.some((w) => w.address === result.address) ? (
+              <><BellOff size={13} /> Не следить</>
+            ) : (
+              <><Bell size={13} /> Следить за адресом</>
+            )}
+          </button>
+        )}
       </form>
+
+      <div className="card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+          <h3 className="flex items-center gap-2 text-sm font-bold"><Eye size={15} /> Мониторинг ({watchlist.length})</h3>
+          <button onClick={() => recheckWatchlist(false)} disabled={watchBusy || watchlist.length === 0} className="btn-ghost px-3 py-1.5 text-xs disabled:opacity-50">
+            <RefreshCw size={13} className={watchBusy ? 'animate-spin' : ''} /> {watchBusy ? 'Проверяю…' : 'Проверить все'}
+          </button>
+        </div>
+        {watchMsg && <p className="px-4 py-2 text-xs text-amber-200">{watchMsg}</p>}
+        {watchlist.length === 0 ? (
+          <p className="px-4 py-6 text-center text-xs text-slate-500">
+            Добавьте адреса кнопкой «Следить» — при изменении статуса увидите алерт. Проверка не чаще раза в сутки на адрес.
+          </p>
+        ) : (
+          <div className="divide-y divide-white/5">
+            {watchlist.map((w) => (
+              <div key={w.address} className="flex flex-wrap items-center gap-2 px-4 py-2.5 text-sm">
+                <VerdictDot verdict={w.lastVerdict || 'unknown'} />
+                <code className="min-w-0 flex-1 truncate font-mono text-xs text-slate-300" title={w.address}>{shortAddr(w.address)}</code>
+                <span className="text-[11px] text-slate-500">
+                  {w.lastCheck ? `проверен ${formatDateTime(w.lastCheck)}` : 'ещё не проверен'}
+                </span>
+                {w.prevVerdict && w.lastVerdict !== w.prevVerdict && (
+                  <span className="rounded-md bg-red-500/15 px-2 py-0.5 text-[11px] font-bold text-red-200">статус изменился!</span>
+                )}
+                <button onClick={() => toggleWatch(w.address)} title="Убрать из мониторинга" className="rounded-lg p-1.5 text-slate-500 hover:bg-red-500/20 hover:text-red-300">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">

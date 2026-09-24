@@ -4,9 +4,10 @@ import App from './App.jsx'
 import './index.css'
 import { useAuth } from './store/useAuth.js'
 import { captureRefParam } from './utils/referral.js'
+import { applyTheme, getTheme } from './utils/theme.js'
 
-// Force dark theme by default (traders expect dark terminals).
-document.documentElement.classList.add('dark')
+// Theme: dark by default (traders expect dark terminals), saved per device.
+applyTheme(getTheme())
 
 // Remember ?ref= invite code (consumed on registration).
 captureRefParam()

@@ -1,11 +1,31 @@
+import { useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
-import { LogIn, LogOut } from 'lucide-react'
+import { LogIn, LogOut, Sun, Moon } from 'lucide-react'
 import { useAuth } from '../store/useAuth.js'
 import { isAdmin } from '../utils/admin.js'
+import { getTheme, applyTheme } from '../utils/theme.js'
 import logo from '../assets/logo.png'
 
 function Logo() {
   return <img src={logo} alt="SpreadBook" className="h-9 w-auto" />
+}
+
+function ThemeToggle() {
+  const [theme, setTheme] = useState(() => getTheme())
+  const flip = () => {
+    const next = theme === 'dark' ? 'light' : 'dark'
+    applyTheme(next)
+    setTheme(next)
+  }
+  return (
+    <button
+      onClick={flip}
+      title={theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
+      className="rounded-xl border border-white/10 bg-white/5 p-2 text-slate-300 transition hover:bg-white/10 hover:text-white"
+    >
+      {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+    </button>
+  )
 }
 
 // mode="public"  -> landing/login header with a Login button.
@@ -31,6 +51,7 @@ export default function Header({ mode = 'public' }) {
             {isAdmin(user) && <CabLink to="/app/admin">Админ</CabLink>}
           </nav>
           <div className="ml-auto flex items-center gap-2">
+            <ThemeToggle />
             <span className="hidden max-w-[180px] truncate rounded-xl bg-white/5 px-3 py-1.5 text-xs text-slate-300 sm:block" title={user?.email}>
               {user?.name} · {user?.email}
             </span>
@@ -66,6 +87,7 @@ export default function Header({ mode = 'public' }) {
           <a href="#features" className="rounded-xl px-3 py-2 text-sm text-slate-400 transition hover:bg-white/5 hover:text-slate-200">Возможности</a>
         </nav>
         <div className="ml-auto flex items-center gap-2">
+          <ThemeToggle />
           {user ? (
             <Link to="/app" className="btn-primary px-4 py-2 text-xs">
               Открыть кабинет

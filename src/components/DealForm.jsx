@@ -9,6 +9,10 @@ export default function DealForm({ initial = null, onDone = null }) {
   const addDeal = useStore((s) => s.addDeal)
   const updateDeal = useStore((s) => s.updateDeal)
   const counterparties = useStore((s) => s.counterparties)()
+  const templates = useStore((s) => s.templates)
+  const saveTemplate = useStore((s) => s.saveTemplate)
+  const deleteTemplate = useStore((s) => s.deleteTemplate)
+  const blacklist = useStore((s) => s.blacklist)
 
   const [form, setForm] = useState(() => ({
     datetime: initial?.datetime ? toLocalInputValue(new Date(initial.datetime)) : toLocalInputValue(new Date()),
@@ -25,6 +29,50 @@ export default function DealForm({ initial = null, onDone = null }) {
   }))
   const [errors, setErrors] = useState({})
   const [useCustomAsset, setUseCustomAsset] = useState(false)
+  const [templateName, setTemplateName] = useState('')
+  const [showTemplateSave, setShowTemplateSave] = useState(false)
+  const [templateMsg, setTemplateMsg] = useState('')
+
+  const applyTemplate = (id) => {
+    const t = templates.find((x) => x.id === id)
+    if (!t) return
+    const d = t.data || {}
+    setForm((f) => ({
+      ...f,
+      type: d.type || f.type,
+      asset: d.asset || f.asset,
+      fiat: d.fiat || f.fiat,
+      amount: d.amount ?? f.amount,
+      price: d.price ?? f.price,
+      fee: d.fee ?? f.fee,
+      platform: d.platform || f.platform,
+      counterparty: d.counterparty ?? f.counterparty,
+      notes: d.notes ?? f.notes,
+    }))
+    if (d.asset && !ASSETS.includes(d.asset)) setUseCustomAsset(false)
+  }
+
+  const doSaveTemplate = () => {
+    const ok = saveTemplate(templateName, {
+      type: form.type,
+      asset,
+      fiat: form.fiat,
+      amount: form.amount,
+      price: form.price,
+      fee: form.fee,
+      platform: form.platform,
+      counterparty: form.counterparty,
+      notes: form.notes,
+    })
+    if (ok) {
+      setTemplateMsg('Шаблон сохранён ✓')
+      setTemplateName('')
+      setShowTemplateSave(false)
+      setTimeout(() => setTemplateMsg(''), 2000)
+    }
+  }
+
+  const blacklisted = blacklist.includes(form.counterparty.trim()) && form.counterparty.trim() !== ''
 
   const suggestions = useMemo(() => {
     const q = form.counterparty.trim().toLowerCase()
@@ -81,7 +129,7 @@ export default function DealForm({ initial = null, onDone = null }) {
   return (
     <form onSubmit={submit} className="card p-5">
       <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-base font-bold">{initial ? 'Редактировать сделку' : 'Быстрый ввод сделки'}</h3>
+        <h3 className="text-base font-bold">{initial?.id ? 'Редактировать сделку' : initial ? 'Дубликат сделки' : 'Быстрый ввод сделки'}</h3>
         <div className="flex rounded-xl bg-ink-950 p-1 text-sm font-semibold">
           {[
             ['buy', 'ПОКУПКА'],
@@ -104,6 +152,22 @@ export default function DealForm({ initial = null, onDone = null }) {
           ))}
         </div>
       </div>
+
+      {templates.length > 0 && (
+        <div className="mb-3 flex items-center gap-2">
+          <label className="shrink-0 text-xs text-slate-500">Шаблон:</label>
+          <select
+            className="input"
+            value=""
+            onChange={(e) => { if (e.target.value) applyTemplate(e.target.value) }}
+          >
+            <option value="">— выбрать для автозаполнения —</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
@@ -190,6 +254,11 @@ export default function DealForm({ initial = null, onDone = null }) {
               ))}
             </div>
           )}
+          {blacklisted && (
+            <p className="mt-1.5 rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-bold text-red-200">
+              ⚠ Контрагент в чёрном списке! Проверьте дважды перед сделкой.
+            </p>
+          )}
         </div>
       </div>
 
@@ -200,8 +269,37 @@ export default function DealForm({ initial = null, onDone = null }) {
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button type="submit" className={form.type === 'buy' ? 'btn-mint' : 'btn-primary'}>
-          {initial ? 'Сохранить' : form.type === 'buy' ? 'Записать покупку' : 'Записать продажу'}
+          {initial?.id ? 'Сохранить' : initial ? 'Записать дубликат' : form.type === 'buy' ? 'Записать покупку' : 'Записать продажу'}
         </button>
+        {!initial?.id && (
+          showTemplateSave ? (
+            <span className="flex items-center gap-2">
+              <input
+                className="input w-44"
+                placeholder="Название шаблона"
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+              />
+              <button type="button" onClick={doSaveTemplate} disabled={!templateName.trim()} className="btn-ghost px-3 py-2 text-xs">ОК</button>
+              <button type="button" onClick={() => setShowTemplateSave(false)} className="px-2 text-xs text-slate-500">✕</button>
+            </span>
+          ) : (
+            <button type="button" onClick={() => setShowTemplateSave(true)} className="text-xs text-slate-400 hover:text-white" title="Сохранить текущие поля как шаблон">
+              ★ В шаблоны
+            </button>
+          )
+        )}
+        {templateMsg && <span className="text-xs text-emerald-300">{templateMsg}</span>}
+        {templates.length > 0 && !initial?.id && (
+          <span className="flex flex-wrap gap-1.5">
+            {templates.map((t) => (
+              <span key={t.id} title={t.name} className="group inline-flex items-center gap-1 rounded-lg bg-white/5 px-2 py-1 text-[11px] text-slate-300">
+                {t.name.length > 18 ? t.name.slice(0, 18) + '…' : t.name}
+                <button type="button" onClick={() => deleteTemplate(t.id)} className="text-slate-500 hover:text-red-300" title="Удалить шаблон">✕</button>
+              </span>
+            ))}
+          </span>
+        )}
         <div className="text-sm text-slate-400">
           Итого: <span className="font-bold text-white">{dealFiatTotal({ amount: qty, price }).toLocaleString('ru-RU')} {form.fiat}</span>
           {fee > 0 && <span className="text-slate-500"> + комиссия {fee.toLocaleString('ru-RU')}</span>}

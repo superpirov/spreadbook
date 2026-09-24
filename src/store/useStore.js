@@ -46,6 +46,10 @@ function loadCache(owner) {
       period: d.period || 'all',
       amlHistory: Array.isArray(d.amlHistory) ? d.amlHistory : [],
       aml: d.aml && typeof d.aml === 'object' ? d.aml : {},
+      templates: Array.isArray(d.templates) ? d.templates : [],
+      blacklist: Array.isArray(d.blacklist) ? d.blacklist : [],
+      goalAmount: Number(d.goalAmount) || 0,
+      watchlist: Array.isArray(d.watchlist) ? d.watchlist : [],
     }
   } catch {
     return null
@@ -81,6 +85,10 @@ export const useStore = create((set, get) => ({
   knownCounterparties: [],
   period: 'all',
   theme: 'dark',
+  templates: [], // [{ id, name, data: {type,asset,fiat,amount,price,fee,platform,counterparty,notes} }]
+  blacklist: [], // [counterparty names]
+  goalAmount: 0, // monthly profit goal (fiat-agnostic number)
+  watchlist: [], // [{ address, network, addedAt, lastVerdict, lastCheck, prevVerdict, ack }]
   amlHistory: [], // [{ id, address, network, verdict, matches, frozen, counterparty, createdAt }]
   aml: {}, // { [contactName]: { status: 'clean'|'bad', at } }
   cloudReady: false, // first snapshot received
@@ -102,6 +110,10 @@ export const useStore = create((set, get) => ({
           period: s.period,
           amlHistory: s.amlHistory.slice(0, 100),
           aml: s.aml,
+          templates: s.templates,
+          blacklist: s.blacklist,
+          goalAmount: s.goalAmount,
+          watchlist: s.watchlist,
         }),
       )
     } catch {
@@ -125,6 +137,10 @@ export const useStore = create((set, get) => ({
       period: cached?.period || 'all',
       amlHistory: cached?.amlHistory || [],
       aml: cached?.aml || {},
+      templates: cached?.templates || [],
+      blacklist: cached?.blacklist || [],
+      goalAmount: cached?.goalAmount || 0,
+      watchlist: cached?.watchlist || [],
       cloudReady: false,
       cloudError: null,
     })
@@ -176,6 +192,10 @@ export const useStore = create((set, get) => ({
         set({
           knownCounterparties: Array.isArray(d.knownCounterparties) ? d.knownCounterparties : get().knownCounterparties,
           period: d.period || get().period,
+          templates: Array.isArray(d.templates) ? d.templates : get().templates,
+          blacklist: Array.isArray(d.blacklist) ? d.blacklist : get().blacklist,
+          goalAmount: Number(d.goalAmount) || 0,
+          watchlist: Array.isArray(d.watchlist) ? d.watchlist : get().watchlist,
         })
         get().saveCache()
       },
@@ -204,7 +224,7 @@ export const useStore = create((set, get) => ({
     })
     unsubs = []
     boundUid = null
-    set({ deals: [], ratings: {}, profiles: {}, knownCounterparties: [], period: 'all', amlHistory: [], aml: {}, cloudReady: false, cloudError: null })
+    set({ deals: [], ratings: {}, profiles: {}, knownCounterparties: [], period: 'all', amlHistory: [], aml: {}, templates: [], blacklist: [], goalAmount: 0, watchlist: [], cloudReady: false, cloudError: null })
   },
 
   // One-time upload of the pre-cloud local database (only if cloud is empty).
@@ -258,7 +278,14 @@ export const useStore = create((set, get) => ({
     try {
       await setDoc(
         userDoc(boundUid),
-        { knownCounterparties: get().knownCounterparties, period: get().period },
+        {
+          knownCounterparties: get().knownCounterparties,
+          period: get().period,
+          templates: get().templates,
+          blacklist: get().blacklist,
+          goalAmount: get().goalAmount,
+          watchlist: get().watchlist,
+        },
         { merge: true },
       )
     } catch {
@@ -310,7 +337,7 @@ export const useStore = create((set, get) => ({
 
   resetAll: async () => {
     const s = get()
-    set({ deals: [], ratings: {}, profiles: {}, knownCounterparties: [], amlHistory: [], aml: {}, isDemo: false })
+    set({ deals: [], ratings: {}, profiles: {}, knownCounterparties: [], amlHistory: [], aml: {}, templates: [], blacklist: [], goalAmount: 0, watchlist: [], isDemo: false })
     get().saveCache()
     if (!boundUid) return
     try {
@@ -322,7 +349,7 @@ export const useStore = create((set, get) => ({
       for (const h of s.amlHistory) {
         if (h.id) batch.delete(doc(db, 'users', boundUid, 'amlchecks', h.id))
       }
-      batch.set(userDoc(boundUid), { knownCounterparties: [] }, { merge: true })
+      batch.set(userDoc(boundUid), { knownCounterparties: [], templates: [], blacklist: [], goalAmount: 0, watchlist: [] }, { merge: true })
       await batch.commit()
     } catch {
       /* offline */
@@ -335,7 +362,11 @@ export const useStore = create((set, get) => ({
     const ratings = payload?.ratings && typeof payload.ratings === 'object' ? payload.ratings : {}
     const profiles = payload?.profiles && typeof payload.profiles === 'object' ? payload.profiles : {}
     const known = Array.isArray(payload?.knownCounterparties) ? payload.knownCounterparties : []
-    set({ deals, ratings, profiles, knownCounterparties: known, isDemo: false })
+    const templates = Array.isArray(payload?.templates) ? payload.templates : []
+    const blacklist = Array.isArray(payload?.blacklist) ? payload.blacklist : []
+    const goalAmount = Number(payload?.goalAmount) || 0
+    const watchlist = Array.isArray(payload?.watchlist) ? payload.watchlist : []
+    set({ deals, ratings, profiles, knownCounterparties: known, templates, blacklist, goalAmount, watchlist, isDemo: false })
     get().saveCache()
     if (!boundUid) return
     try {
@@ -357,7 +388,7 @@ export const useStore = create((set, get) => ({
           { merge: true },
         )
       }
-      batch.set(userDoc(boundUid), { knownCounterparties: known }, { merge: true })
+      batch.set(userDoc(boundUid), { knownCounterparties: known, templates, blacklist, goalAmount, watchlist }, { merge: true })
       await batch.commit()
     } catch {
       /* offline */
@@ -478,6 +509,75 @@ export const useStore = create((set, get) => ({
     } catch {
       /* offline */
     }
+  },
+
+  saveTemplate: (name, data) => {
+    const clean = String(name || '').trim()
+    if (!clean) return false
+    set((s) => ({ templates: [...s.templates, { id: uid(), name: clean, data }] }))
+    get().saveCache()
+    get().persistUserFields()
+    return true
+  },
+
+  deleteTemplate: (id) => {
+    set((s) => ({ templates: s.templates.filter((t) => t.id !== id) }))
+    get().saveCache()
+    get().persistUserFields()
+  },
+
+  toggleBlacklist: (name) => {
+    const clean = String(name || '').trim()
+    if (!clean) return
+    set((s) => ({
+      blacklist: s.blacklist.includes(clean) ? s.blacklist.filter((b) => b !== clean) : [...s.blacklist, clean],
+    }))
+    get().saveCache()
+    get().persistUserFields()
+  },
+
+  setGoal: (amount) => {
+    set({ goalAmount: Math.max(0, Number(amount) || 0) })
+    get().saveCache()
+    get().persistUserFields()
+  },
+
+  toggleWatch: (address, network = '') => {
+    const a = String(address || '').trim()
+    if (!a) return
+    const exists = get().watchlist.some((w) => w.address === a)
+    set((s) => ({
+      watchlist: exists
+        ? s.watchlist.filter((w) => w.address !== a)
+        : [...s.watchlist, { address: a, network, addedAt: new Date().toISOString(), lastVerdict: null, lastCheck: null, prevVerdict: null, ack: true }],
+    }))
+    get().saveCache()
+    get().persistUserFields()
+  },
+
+  updateWatchResult: (address, verdict) => {
+    const at = new Date().toISOString()
+    set((s) => ({
+      watchlist: s.watchlist.map((w) => {
+        if (w.address !== address) return w
+        const changed = w.lastVerdict && w.lastVerdict !== verdict
+        return {
+          ...w,
+          prevVerdict: w.lastVerdict,
+          lastVerdict: verdict,
+          lastCheck: at,
+          ack: changed ? false : w.ack,
+        }
+      }),
+    }))
+    get().saveCache()
+    get().persistUserFields()
+  },
+
+  ackWatch: (address) => {
+    set((s) => ({ watchlist: s.watchlist.map((w) => (w.address === address ? { ...w, ack: true } : w)) }))
+    get().saveCache()
+    get().persistUserFields()
   },
 
   counterparties: () => {

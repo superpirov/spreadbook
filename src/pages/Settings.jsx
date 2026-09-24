@@ -16,6 +16,10 @@ export default function Settings() {
   const ratings = useStore((s) => s.ratings)
   const knownCounterparties = useStore((s) => s.knownCounterparties)
   const profiles = useStore((s) => s.profiles)
+  const templates = useStore((s) => s.templates)
+  const blacklist = useStore((s) => s.blacklist)
+  const goalAmount = useStore((s) => s.goalAmount)
+  const watchlist = useStore((s) => s.watchlist)
   const importData = useStore((s) => s.importData)
   const resetAll = useStore((s) => s.resetAll)
   const cloudReady = useStore((s) => s.cloudReady)
@@ -35,7 +39,7 @@ export default function Settings() {
   }
 
   const exportJSON = () => {
-    download(`spreadbook-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ app: 'SpreadBook', version: 2, exportedAt: new Date().toISOString(), deals, ratings, knownCounterparties, profiles }, null, 2), 'application/json')
+    download(`spreadbook-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ app: 'SpreadBook', version: 3, exportedAt: new Date().toISOString(), deals, ratings, knownCounterparties, profiles, templates, blacklist, goalAmount, watchlist }, null, 2), 'application/json')
     setMsg('JSON-дамп скачан.')
   }
 

@@ -111,3 +111,38 @@ export function groupByPair(deals) {
     .sort((a, b) => b.value - a.value)
     .slice(0, 8)
 }
+
+// Average spread per counterparty: weighted avg sell vs weighted avg buy,
+// per asset + volume-weighted total. Null avg = no closed pairs yet.
+export function counterpartySpread(deals) {
+  const byAsset = new Map()
+  for (const d of deals) {
+    if (!byAsset.has(d.asset)) {
+      byAsset.set(d.asset, { buyQty: 0, buySum: 0, sellQty: 0, sellSum: 0, vol: 0 })
+    }
+    const e = byAsset.get(d.asset)
+    const qty = Number(d.amount) || 0
+    const total = dealFiatTotal(d)
+    e.vol += total
+    if (d.type === 'buy') {
+      e.buyQty += qty
+      e.buySum += total
+    } else {
+      e.sellQty += qty
+      e.sellSum += total
+    }
+  }
+  const perAsset = []
+  let wSum = 0
+  let wVol = 0
+  for (const [asset, e] of byAsset) {
+    if (e.buyQty > 0 && e.sellQty > 0 && e.buySum > 0) {
+      const sp = (e.sellSum / e.sellQty - e.buySum / e.buyQty) / (e.buySum / e.buyQty) * 100
+      perAsset.push({ asset, spread: Math.round(sp * 100) / 100, vol: e.vol })
+      wSum += sp * e.vol
+      wVol += e.vol
+    }
+  }
+  perAsset.sort((x, y) => y.vol - x.vol)
+  return { perAsset, avg: wVol > 0 ? Math.round((wSum / wVol) * 100) / 100 : null }
+}
