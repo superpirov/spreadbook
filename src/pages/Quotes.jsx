@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw, Search, ArrowLeftRight, LineChart, TriangleAlert } from 'lucide-react'
 import { EXCHANGES, fetchExchange, findTriangles } from '../utils/quotes.js'
 
@@ -15,9 +15,11 @@ export default function Quotes() {
   const [exFilter, setExFilter] = useState('all')
   const [q, setQ] = useState('')
   const [tickers, setTickers] = useState([])
-  const [status, setStatus] = useState({}) // { bybit: 'ok'|'loading'|'error:…' }
+  const [status, setStatus] = useState({}) // { bybit: 'ok' | 'ok • прокси' | 'loading' | 'error:…' }
   const [updatedAt, setUpdatedAt] = useState(null)
   const [auto, setAuto] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const firstLoad = useRef(true)
 
   // Arbitrage controls
   const [arbEx, setArbEx] = useState('bybit')
@@ -26,7 +28,10 @@ export default function Quotes() {
   const [minVolume, setMinVolume] = useState('10000')
 
   const load = useCallback(async () => {
-    setStatus({ bybit: 'loading', htx: 'loading', mexc: 'loading' })
+    // Don't blank the badges on background refreshes — keep last known state.
+    const quiet = !firstLoad.current
+    if (!quiet) setStatus({ bybit: 'loading', htx: 'loading', mexc: 'loading' })
+    setRefreshing(true)
     const results = await Promise.allSettled(EXCHANGES.map((e) => fetchExchange(e.id)))
     const all = []
     const st = {}
@@ -42,6 +47,8 @@ export default function Quotes() {
     setTickers(all)
     setStatus(st)
     setUpdatedAt(new Date())
+    setRefreshing(false)
+    firstLoad.current = false
   }, [])
 
   useEffect(() => {
@@ -91,7 +98,7 @@ export default function Quotes() {
             авто (20с)
           </label>
           <button onClick={load} className="btn-ghost px-3 py-1.5 text-xs">
-            <RefreshCw size={14} /> Обновить
+            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} /> Обновить
           </button>
         </div>
       </div>

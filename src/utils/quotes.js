@@ -45,15 +45,20 @@ function norm({ exchange, symbol, price, bid, ask, changePct, volume }) {
 const PROXY = (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
 
 // Try URLs in order (mirror hosts, then public CORS proxy). Throws last error.
-async function getFirst(urls) {
+async function getFirst(urls, timeoutMs = 12000) {
   let lastErr = new Error('no urls')
   for (const u of urls) {
+    const c = new AbortController()
+    const t = setTimeout(() => c.abort(), timeoutMs)
     try {
-      const res = await fetch(u)
+      const res = await fetch(u, { signal: c.signal })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      return { data: await res.json(), viaProxy: u.includes('allorigins') }
+      const data = await res.json()
+      clearTimeout(t)
+      return { data, viaProxy: u.includes('allorigins') }
     } catch (e) {
-      lastErr = e
+      clearTimeout(t)
+      lastErr = e?.name === 'AbortError' ? new Error('timeout') : e
     }
   }
   throw lastErr
