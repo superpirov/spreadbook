@@ -59,11 +59,21 @@ export async function fetchBybitP2P(creds, { token = 'USDT', fiat = 'RUB', side 
       body: JSON.stringify(body),
     })
   } catch {
-    throw new Error('Bybit: сеть недоступна')
+    throw new Error('Bybit: сеть недоступна (проверьте интернет/VPN)')
   }
-  const j = await res.json().catch(() => null)
+  const text = await res.text().catch(() => '')
+  let j = null
+  try {
+    j = JSON.parse(text)
+  } catch {
+    /* non-JSON (geo-block page?) */
+  }
   if (!j || j.retCode !== 0) {
-    throw new Error(`Bybit: ${j?.retMsg || `HTTP ${res.status}`}. Проверьте ключ и статус P2P-рекламодателя.`)
+    console.warn('[spreadbook] Bybit P2P raw:', text.slice(0, 300))
+    if (!j) {
+      throw new Error(`Bybit: не-JSON ответ (HTTP ${res.status}) — похоже на сетевую блокировку/гео-фильтр.`)
+    }
+    throw new Error(`Bybit [${j.retCode}]: ${j.retMsg || 'без описания'}. Проверьте ключ, P2P-права и статус рекламодателя.`)
   }
   return (j.result?.items || []).map((it) => ({
     id: String(it.id),
