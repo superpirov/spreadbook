@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react'
-import { Download, Upload, Trash2, FileSpreadsheet, Cloud, CloudOff, Loader2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Download, Upload, Trash2, FileSpreadsheet, Cloud, CloudOff, Loader2, KeyRound, Save } from 'lucide-react'
 import { useStore } from '../store/useStore.js'
 import { useAuth } from '../store/useAuth.js'
+import { P2P_EXCHANGES, loadExKeys, saveExKey, deleteExKey } from '../utils/exkeys.js'
 
 function toCSV(deals) {
   const head = ['id', 'datetime', 'type', 'asset', 'fiat', 'amount', 'price', 'fee', 'platform', 'counterparty', 'notes']
@@ -102,6 +103,7 @@ export default function Settings() {
           <div className="rounded-xl bg-white/[0.04] p-3"><dt className="text-xs uppercase">Хранилище</dt><dd className="text-lg font-bold text-white">Firestore + кэш</dd></div>
         </dl>
       </div>
+      <ExKeysCard />
       <div className="card border-red-500/20 p-5">
         <h3 className="text-sm font-bold text-red-300">Опасная зона</h3>
         <p className="mt-1 text-xs text-slate-400">Удалить все сделки, контакты и реквизиты везде — на всех устройствах. Без возможности восстановления.</p>
@@ -112,6 +114,106 @@ export default function Settings() {
           <Trash2 size={16} /> Удалить все данные
         </button>
       </div>
+    </div>
+  )
+}
+
+function ExKeysCard() {
+  const user = useAuth((s) => s.user)
+  const [keys, setKeys] = useState({})
+  const [drafts, setDrafts] = useState({})
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(null)
+
+  useEffect(() => {
+    if (!user) return
+    loadExKeys(user.id).then(setKeys).catch(() => setMsg('Ключи не загрузились. Проверьте rules (exkeys).'))
+  }, [user])
+
+  const set = (ex, field, value) => setDrafts((d) => ({ ...d, [ex]: { ...d[ex], [field]: value } }))
+
+  const save = async (ex) => {
+    const cur = { ...(keys[ex] || {}), ...(drafts[ex] || {}) }
+    if (!Object.values(cur).some((v) => String(v || '').trim())) {
+      setMsg('Заполните хотя бы одно поле ключа.')
+      return
+    }
+    setBusy(ex)
+    try {
+      await saveExKey(user.id, ex, cur)
+      setKeys((k) => ({ ...k, [ex]: cur }))
+      setDrafts((d) => ({ ...d, [ex]: {} }))
+      setMsg(`Ключ ${ex} сохранён в вашем облаке.`)
+    } catch {
+      setMsg('Не удалось сохранить. Проверьте rules Firestore (exkeys).')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const remove = async (ex) => {
+    if (!window.confirm(`Удалить ключ ${ex}?`)) return
+    try {
+      await deleteExKey(user.id, ex)
+      setKeys((k) => {
+        const c = { ...k }
+        delete c[ex]
+        return c
+      })
+      setMsg(`Ключ ${ex} удалён.`)
+    } catch {
+      setMsg('Не удалось удалить.')
+    }
+  }
+
+  return (
+    <div className="card p-5">
+      <h3 className="flex items-center gap-2 text-sm font-bold"><KeyRound size={15} /> Биржевые API-ключи (P2P-стаканы)</h3>
+      <p className="mt-1 text-xs leading-relaxed text-slate-400">
+        Только ваши личные ключи — хранятся в вашем облаке и используются только из вашего браузера.
+        Создавайте ключи с минимальными правами (чтение P2P), <b className="text-red-300">без права на вывод и торговлю</b>.
+        Для Bybit дополнительно нужен статус P2P-рекламодателя.
+      </p>
+      <div className="mt-3 space-y-3">
+        {P2P_EXCHANGES.map((ex) => (
+          <div key={ex.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-bold">{ex.name}</span>
+              {keys[ex.id] ? (
+                <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-xs font-bold text-emerald-200">добавлен</span>
+              ) : (
+                <span className="rounded-md bg-white/5 px-2 py-0.5 text-xs text-slate-400">нет</span>
+              )}
+            </div>
+            <p className="mt-1 text-[11px] text-slate-500">{ex.hint}</p>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {ex.fields.map((f) => (
+                <input
+                  key={f}
+                  type="password"
+                  autoComplete="off"
+                  placeholder={f === 'apiKey' ? 'API Key' : f === 'apiSecret' ? 'API Secret' : 'Токен'}
+                  className="input font-mono text-xs"
+                  value={drafts[ex.id]?.[f] ?? (keys[ex.id]?.[f] ? '••••••••' : '')}
+                  onChange={(e) => set(e, f, e.target.value)}
+                  onFocus={(e) => { if (e.target.value === '••••••••') set(ex, f, '') }}
+                />
+              ))}
+            </div>
+            <div className="mt-2 flex gap-2">
+              <button disabled={busy === ex.id} onClick={() => save(ex.id)} className="btn-ghost px-3 py-1.5 text-xs">
+                <Save size={13} /> {busy === ex.id ? '…' : 'Сохранить'}
+              </button>
+              {keys[ex.id] && (
+                <button onClick={() => remove(ex.id)} className="rounded-xl px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/10">
+                  Удалить
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+      {msg && <p className="mt-2 text-xs text-slate-300">{msg}</p>}
     </div>
   )
 }

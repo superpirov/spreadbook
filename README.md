@@ -52,7 +52,7 @@ npm run deploy
 Без ключей: публичные маркет-данные Bybit / HTX / MEXC (`src/utils/quotes.js`).
 - Спот: тикеры (цена, 24ч %, объём) с бейджем биржи, поиск, автообновление 20с, статусы доступности (CORS/блокировки видны).
 - Арбитраж: внутрибиржевые треугольники USDT→X→Y→USDT по bid/ask с комиссией тейкера, фильтр мин. профита и объёма. Расчёт индикативный (без глубины стакана).
-- P2P-стаканы сюда НЕ входят: Bybit/MEXC/Rapira требуют подпись секретом — только личные ключи пользователя (будущая фаза). Секреты бирж в frontend не вшиваются никогда.
+- P2P-стаканы: личные ключи пользователя (`users/{uid}/exkeys/{bybit|mexc|rapira}`, rules выше), подписи HMAC в браузере (WebCrypto), фетчеры в `src/utils/exkeys.js`. Секреты владельца в frontend не вшиваются никогда; ключи — только с правами чтения P2P, без выводов/торговли.
 
 ## Реферальная программа
 
@@ -99,6 +99,10 @@ service cloud.firestore {
         allow read, write: if ownerOrAdmin(uid);
       }
       match /amlchecks/{checkId} {
+        allow read, write: if ownerOrAdmin(uid);
+      }
+      // Personal exchange API keys (P2P): owner only.
+      match /exkeys/{exId} {
         allow read, write: if ownerOrAdmin(uid);
       }
     }
