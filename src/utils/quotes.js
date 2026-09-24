@@ -42,12 +42,18 @@ function norm({ exchange, symbol, price, bid, ask, changePct, volume }) {
   }
 }
 
-const PROXY = (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
+const PROXIES = [
+  (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+]
+const isProxy = (u) => u.includes('allorigins') || u.includes('codetabs')
 
-// Try URLs in order (mirror hosts, then public CORS proxy). Throws last error.
-async function getFirst(urls, timeoutMs = 12000) {
+// Try URLs in order (mirror hosts, then public CORS proxies). Throws last error.
+async function getFirst(urls) {
   let lastErr = new Error('no urls')
   for (const u of urls) {
+    // Proxies are slow — give them more time.
+    const timeoutMs = isProxy(u) ? 25000 : 12000
     const c = new AbortController()
     const t = setTimeout(() => c.abort(), timeoutMs)
     try {
@@ -55,7 +61,7 @@ async function getFirst(urls, timeoutMs = 12000) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       clearTimeout(t)
-      return { data, viaProxy: u.includes('allorigins') }
+      return { data, viaProxy: isProxy(u) }
     } catch (e) {
       clearTimeout(t)
       lastErr = e?.name === 'AbortError' ? new Error('timeout') : e
@@ -64,11 +70,10 @@ async function getFirst(urls, timeoutMs = 12000) {
   throw lastErr
 }
 
+const withProxies = (url) => [url, ...PROXIES.map((p) => p(url))]
+
 async function fetchBybit() {
-  const { data: j, viaProxy } = await getFirst([
-    'https://api.bybit.com/v5/market/tickers?category=spot',
-    PROXY('https://api.bybit.com/v5/market/tickers?category=spot'),
-  ])
+  const { data: j, viaProxy } = await getFirst(withProxies('https://api.bybit.com/v5/market/tickers?category=spot'))
   if (j.retCode !== 0) throw new Error(j.retMsg || 'Bybit error')
   const tickers = j.result.list
     .map((t) =>
@@ -91,7 +96,7 @@ async function fetchHtx() {
   const { data: j, viaProxy } = await getFirst([
     `https://api-aws.huobi.pro${path}`, // AWS CDN mirror (official)
     `https://api.huobi.pro${path}`,
-    PROXY(`https://api.huobi.pro${path}`),
+    ...withProxies(`https://api.huobi.pro${path}`).slice(1),
   ])
   if (j.status !== 'ok') throw new Error(j.errmsg || 'HTX error')
   const tickers = j.data
@@ -112,7 +117,7 @@ async function fetchHtx() {
 
 async function fetchMexc() {
   const url = 'https://api.mexc.com/api/v3/ticker/24hr'
-  const { data: j, viaProxy } = await getFirst([url, PROXY(url)])
+  const { data: j, viaProxy } = await getFirst(withProxies(url))
   if (!Array.isArray(j)) throw new Error('MEXC error')
   const tickers = j
     .map((t) =>
