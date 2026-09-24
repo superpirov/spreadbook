@@ -33,8 +33,8 @@ export default function Quotes() {
     results.forEach((r, i) => {
       const id = EXCHANGES[i].id
       if (r.status === 'fulfilled') {
-        st[id] = 'ok'
-        all.push(...r.value)
+        st[id] = r.value.viaProxy ? 'ok • прокси' : 'ok'
+        all.push(...r.value.tickers)
       } else {
         st[id] = `error: ${r.reason?.message || 'нет данных'}`
       }
@@ -100,13 +100,13 @@ export default function Quotes() {
         {EXCHANGES.map((e) => (
           <span
             key={e.id}
-            title={status[e.id]?.startsWith('error') ? status[e.id] : `${e.name}: OK`}
+            title={status[e.id]?.startsWith('error') ? status[e.id] : `${e.name}: ${status[e.id] === 'ok • прокси' ? 'OK через прокси (данные могут запаздывать)' : 'OK'}`}
             className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold ${
-              status[e.id] === 'ok' ? 'bg-emerald-500/10 text-emerald-200' : status[e.id]?.startsWith('error') ? 'bg-red-500/10 text-red-200' : 'bg-white/5 text-slate-400'
+              String(status[e.id]).startsWith('ok') ? 'bg-emerald-500/10 text-emerald-200' : status[e.id]?.startsWith('error') ? 'bg-red-500/10 text-red-200' : 'bg-white/5 text-slate-400'
             }`}
           >
-            <span className={`h-1.5 w-1.5 rounded-full ${status[e.id] === 'ok' ? 'bg-emerald-400' : status[e.id]?.startsWith('error') ? 'bg-red-400' : 'bg-slate-500 animate-pulseSoft'}`} />
-            {e.name}
+            <span className={`h-1.5 w-1.5 rounded-full ${String(status[e.id]).startsWith('ok') ? 'bg-emerald-400' : status[e.id]?.startsWith('error') ? 'bg-red-400' : 'bg-slate-500 animate-pulseSoft'}`} />
+            {e.name}{status[e.id] === 'ok • прокси' ? ' · proxy' : ''}
           </span>
         ))}
       </div>

@@ -42,12 +42,30 @@ function norm({ exchange, symbol, price, bid, ask, changePct, volume }) {
   }
 }
 
+const PROXY = (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
+
+// Try URLs in order (mirror hosts, then public CORS proxy). Throws last error.
+async function getFirst(urls) {
+  let lastErr = new Error('no urls')
+  for (const u of urls) {
+    try {
+      const res = await fetch(u)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return { data: await res.json(), viaProxy: u.includes('allorigins') }
+    } catch (e) {
+      lastErr = e
+    }
+  }
+  throw lastErr
+}
+
 async function fetchBybit() {
-  const res = await fetch('https://api.bybit.com/v5/market/tickers?category=spot')
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const j = await res.json()
+  const { data: j, viaProxy } = await getFirst([
+    'https://api.bybit.com/v5/market/tickers?category=spot',
+    PROXY('https://api.bybit.com/v5/market/tickers?category=spot'),
+  ])
   if (j.retCode !== 0) throw new Error(j.retMsg || 'Bybit error')
-  return j.result.list
+  const tickers = j.result.list
     .map((t) =>
       norm({
         exchange: 'bybit',
@@ -60,14 +78,18 @@ async function fetchBybit() {
       }),
     )
     .filter(Boolean)
+  return { tickers, viaProxy }
 }
 
 async function fetchHtx() {
-  const res = await fetch('https://api.huobi.pro/market/tickers')
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const j = await res.json()
+  const path = '/market/tickers'
+  const { data: j, viaProxy } = await getFirst([
+    `https://api-aws.huobi.pro${path}`, // AWS CDN mirror (official)
+    `https://api.huobi.pro${path}`,
+    PROXY(`https://api.huobi.pro${path}`),
+  ])
   if (j.status !== 'ok') throw new Error(j.errmsg || 'HTX error')
-  return j.data
+  const tickers = j.data
     .map((d) =>
       norm({
         exchange: 'htx',
@@ -80,14 +102,14 @@ async function fetchHtx() {
       }),
     )
     .filter(Boolean)
+  return { tickers, viaProxy }
 }
 
 async function fetchMexc() {
-  const res = await fetch('https://api.mexc.com/api/v3/ticker/24hr')
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const j = await res.json()
+  const url = 'https://api.mexc.com/api/v3/ticker/24hr'
+  const { data: j, viaProxy } = await getFirst([url, PROXY(url)])
   if (!Array.isArray(j)) throw new Error('MEXC error')
-  return j
+  const tickers = j
     .map((t) =>
       norm({
         exchange: 'mexc',
@@ -100,6 +122,7 @@ async function fetchMexc() {
       }),
     )
     .filter(Boolean)
+  return { tickers, viaProxy }
 }
 
 const FETCHERS = { bybit: fetchBybit, htx: fetchHtx, mexc: fetchMexc }
