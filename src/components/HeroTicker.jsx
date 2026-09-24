@@ -2,38 +2,76 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 // Animated hero: live ticker tape + SVG equity curve drawing itself.
 // Pure frontend eye-candy, no backend needed.
-const TICKERS = [
+// Real prices via CoinGecko public API (free, keyless, CORS-enabled).
+// Poll every 60s (free-tier friendly). Falls back to static seeds offline.
+const COINS = [
+  { id: 'bitcoin', s: 'BTC/USDT', cur: 'usd', dp: 1 },
+  { id: 'ethereum', s: 'ETH/USDT', cur: 'usd', dp: 2 },
+  { id: 'solana', s: 'SOL/USDT', cur: 'usd', dp: 2 },
+  { id: 'toncoin', s: 'TON/USDT', cur: 'usd', dp: 3 },
+  { id: 'tron', s: 'TRX/USDT', cur: 'usd', dp: 4 },
+  { id: 'tether', s: 'USDT/RUB', cur: 'rub', dp: 2 },
+  { id: 'bitcoin', s: 'BTC/RUB', cur: 'rub', dp: 0 },
+  { id: 'ethereum', s: 'ETH/RUB', cur: 'rub', dp: 0 },
+]
+
+const SEED = [
   { s: 'BTC/USDT', p: 67412.5, c: 1.8 },
   { s: 'ETH/USDT', p: 3521.4, c: -0.6 },
   { s: 'SOL/USDT', p: 171.22, c: 3.4 },
   { s: 'TON/USDT', p: 6.84, c: 0.9 },
+  { s: 'TRX/USDT', p: 0.1214, c: 0.5 },
   { s: 'USDT/RUB', p: 93.42, c: 0.3 },
   { s: 'BTC/RUB', p: 6298400, c: 2.1 },
   { s: 'ETH/RUB', p: 329100, c: -1.2 },
-  { s: 'TRX/USDT', p: 0.1214, c: 0.5 },
 ]
 
 function useLivePrices() {
-  const [tick, setTick] = useState(0)
-  const [prices, setPrices] = useState(TICKERS)
+  const [prices, setPrices] = useState(SEED)
+  const [live, setLive] = useState(false)
+  const [updatedAt, setUpdatedAt] = useState(null)
+
   useEffect(() => {
-    const id = setInterval(() => {
-      setTick((t) => t + 1)
-      setPrices((prev) =>
-        prev.map((t) => {
-          const drift = (Math.random() - 0.5) * 0.004
-          const p = t.p * (1 + drift)
-          return { ...t, p, c: t.c + drift * 100 }
-        }),
-      )
-    }, 1500)
-    return () => clearInterval(id)
+    let stop = false
+    const load = async () => {
+      try {
+        const ids = [...new Set(COINS.map((c) => c.id))].join(',')
+        const res = await fetch(
+          `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd,rub&include_24hr_change=true`,
+        )
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const j = await res.json()
+        if (stop) return
+        const next = COINS.map((c) => {
+          const coin = j?.[c.id]
+          const price = Number(coin?.[c.cur])
+          const change = Number(coin?.[`${c.cur}_24h_change`])
+          if (!(price > 0)) {
+            const seed = SEED.find((s) => s.s === c.s)
+            return seed || { s: c.s, p: 0, c: 0 }
+          }
+          return { s: c.s, p: price, c: Number.isFinite(change) ? change : 0, dp: c.dp }
+        })
+        setPrices(next)
+        setLive(true)
+        setUpdatedAt(new Date())
+      } catch {
+        /* keep last (or seed) data */
+      }
+    }
+    load()
+    const id = setInterval(load, 60000)
+    return () => {
+      stop = true
+      clearInterval(id)
+    }
   }, [])
-  return { prices, tick }
+
+  return { prices, live, updatedAt }
 }
 
 export default function HeroTicker() {
-  const { prices } = useLivePrices()
+  const { prices, live, updatedAt } = useLivePrices()
   const row = useMemo(() => [...prices, ...prices], [prices])
   const pathRef = useRef(null)
 
@@ -135,11 +173,17 @@ export default function HeroTicker() {
         </div>
       </div>
       <div className="relative mt-6 overflow-hidden rounded-xl border border-white/10 bg-ink-950/60">
+        <div className="flex items-center justify-between border-b border-white/5 px-4 py-1 text-[10px] uppercase tracking-widest text-slate-500">
+          <span>Котировки · CoinGecko</span>
+          <span className={live ? 'text-emerald-300' : 'text-amber-300'}>
+            {live ? `● live${updatedAt ? ` · ${updatedAt.toLocaleTimeString('ru-RU')}` : ''}` : '● подключение…'}
+          </span>
+        </div>
         <div className="flex w-max animate-ticker gap-6 whitespace-nowrap px-4 py-2.5 text-xs">
           {row.map((t, i) => (
             <span key={i} className="inline-flex items-center gap-2 text-slate-300">
               <span className="font-semibold text-white">{t.s}</span>
-              <span>{t.p.toLocaleString('ru-RU', { maximumFractionDigits: 4 })}</span>
+              <span>{t.p.toLocaleString('ru-RU', { maximumFractionDigits: t.dp ?? 4, minimumFractionDigits: 0 })}</span>
               <span className={t.c >= 0 ? 'text-emerald-300' : 'text-red-300'}>
                 {t.c >= 0 ? '▲' : '▼'} {Math.abs(t.c).toFixed(2)}%
               </span>
