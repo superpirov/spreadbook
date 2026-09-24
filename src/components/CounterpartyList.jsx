@@ -199,11 +199,10 @@ export default function CounterpartyList() {
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-brand/60 to-mint/60">
                   <User size={16} />
                 </span>
-                {aml[s.name] && (
-                  <span title={aml[s.name].status === 'bad' ? 'AML: риск' : 'AML: чисто'}>
-                    <VerdictDot verdict={aml[s.name].status} />
-                  </span>
-                )}
+                {/* Always rendered (invisible when unchecked) so names align. */}
+                <span className={aml[s.name] ? '' : 'invisible'} title={aml[s.name] ? (aml[s.name].status === 'bad' ? 'AML: риск' : 'AML: чисто') : ''}>
+                  <VerdictDot verdict={aml[s.name]?.status || 'clean'} />
+                </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold">{s.name}</span>
                   <span className="block text-xs text-slate-400">
