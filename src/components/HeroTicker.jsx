@@ -15,6 +15,14 @@ const COINS = [
   { id: 'ethereum', s: 'ETH/RUB', cur: 'rub', dp: 0 },
 ]
 
+const HERO_VIDEO = {
+  poster: 'https://cdn.pixabay.com/video/2024/03/15/204306-923909642_tiny.jpg',
+  sources: [
+    'https://cdn.pixabay.com/video/2024/03/15/204306-923909642_medium.mp4',
+    'https://cdn.pixabay.com/video/2024/03/15/204306-923909642_small.mp4',
+  ],
+}
+
 const SEED = [
   { s: 'BTC/USDT', p: 67412.5, c: 1.8 },
   { s: 'ETH/USDT', p: 3521.4, c: -0.6 },
@@ -88,8 +96,22 @@ export default function HeroTicker() {
 
   return (
     <section className="card relative overflow-hidden p-6 sm:p-8">
-      <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-brand/25 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-28 -left-16 h-72 w-72 rounded-full bg-mint/20 blur-3xl" />
+      {/* Market video background + readability overlay */}
+      <video
+        className="hero-video pointer-events-none absolute inset-0 h-full w-full object-cover"
+        autoPlay
+        muted
+        loop
+        playsInline
+        preload="metadata"
+        poster={HERO_VIDEO.poster}
+      >
+        {HERO_VIDEO.sources.map((src) => (
+          <source key={src} src={src} type="video/mp4" />
+        ))}
+      </video>
+      <div className="pointer-events-none absolute inset-0 bg-ink-950/75" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-brand/25 via-transparent to-mint/20" />
       <div className="relative grid items-center gap-6 md:grid-cols-[1.1fr_0.9fr]">
         <div>
           <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
@@ -117,11 +139,11 @@ export default function HeroTicker() {
           </div>
           <div className="mt-5 grid max-w-md grid-cols-3 gap-3 text-center">
             {[
-              ['100%', 'локально'],
-              ['0 ₽', 'серверов'],
-              ['FIFO*', 'скоро'],
+              ['3 дня', 'триал бесплатно'],
+              ['19 USDT', 'PRO в месяц'],
+              ['AML', 'скрининг адресов'],
             ].map(([v, l]) => (
-              <div key={l} className="rounded-xl border border-white/10 bg-white/[0.04] px-2 py-3">
+              <div key={l} className="rounded-xl border border-white/10 bg-ink-950/60 px-2 py-3 backdrop-blur-sm">
                 <div className="text-base font-bold text-white">{v}</div>
                 <div className="text-[11px] text-slate-400">{l}</div>
               </div>

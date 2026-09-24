@@ -45,6 +45,12 @@ input[type='number'] {
   appearance: textfield;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .hero-video {
+    display: none;
+  }
+}
+
 @layer components {
   .card {
     @apply rounded-2xl border border-white/10 bg-ink-900/80 shadow-card backdrop-blur;
