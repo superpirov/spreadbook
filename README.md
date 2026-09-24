@@ -47,13 +47,6 @@ npm run deploy
 2. Authentication → Settings → **Authorized domains** → добавлен `superpirov.github.io` (иначе вход с сайта отклоняется с `auth/unauthorized-domain`).
 3. Данные сделок по-прежнему в `localStorage` (per-browser). Синхронизация между устройствами — следующий шаг: Firestore.
 
-## Котировки и арбитраж (`/app/quotes`)
-
-Без ключей: публичные маркет-данные Bybit / HTX / MEXC (`src/utils/quotes.js`).
-- Спот: тикеры (цена, 24ч %, объём) с бейджем биржи, поиск, автообновление 20с, статусы доступности (CORS/блокировки видны).
-- Арбитраж: внутрибиржевые треугольники USDT→X→Y→USDT по bid/ask с комиссией тейкера, фильтр мин. профита и объёма. Расчёт индикативный (без глубины стакана).
-- P2P-стаканы: личные ключи пользователя (`users/{uid}/exkeys/{bybit|mexc|rapira}`, rules выше), подписи HMAC в браузере (WebCrypto), фетчеры в `src/utils/exkeys.js`. Секреты владельца в frontend не вшиваются никогда; ключи — только с правами чтения P2P, без выводов/торговли.
-
 ## Реферальная программа
 
 Без бэкенда: код `SB-XXXXXX` (из uid), ссылка `?ref=CODE#/login` (захват в `main.jsx` → localStorage → consume при регистрации).
@@ -99,10 +92,6 @@ service cloud.firestore {
         allow read, write: if ownerOrAdmin(uid);
       }
       match /amlchecks/{checkId} {
-        allow read, write: if ownerOrAdmin(uid);
-      }
-      // Personal exchange API keys (P2P): owner only.
-      match /exkeys/{exId} {
         allow read, write: if ownerOrAdmin(uid);
       }
     }
