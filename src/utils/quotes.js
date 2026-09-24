@@ -88,7 +88,7 @@ async function fetchBybit() {
       }),
     )
     .filter(Boolean)
-  return { tickers, viaProxy }
+  return { tickers, viaProxy, transport: viaProxy ? 'proxy' : 'rest' }
 }
 
 async function fetchHtx() {
@@ -112,27 +112,101 @@ async function fetchHtx() {
       }),
     )
     .filter(Boolean)
-  return { tickers, viaProxy }
+  return { tickers, viaProxy, transport: viaProxy ? 'proxy' : 'rest' }
 }
 
 async function fetchMexc() {
   const url = 'https://api.mexc.com/api/v3/ticker/24hr'
-  const { data: j, viaProxy } = await getFirst(withProxies(url))
-  if (!Array.isArray(j)) throw new Error('MEXC error')
-  const tickers = j
-    .map((t) =>
-      norm({
-        exchange: 'mexc',
-        symbol: t.symbol,
-        price: Number(t.lastPrice),
-        bid: Number(t.bidPrice),
-        ask: Number(t.askPrice),
-        changePct: Number(t.priceChangePercent),
-        volume: Number(t.quoteVolume),
-      }),
-    )
-    .filter(Boolean)
-  return { tickers, viaProxy }
+  let restErr = null
+  try {
+    const { data: j, viaProxy } = await getFirst(withProxies(url))
+    if (!Array.isArray(j)) throw new Error('MEXC error')
+    const tickers = j
+      .map((t) =>
+        norm({
+          exchange: 'mexc',
+          symbol: t.symbol,
+          price: Number(t.lastPrice),
+          bid: Number(t.bidPrice),
+          ask: Number(t.askPrice),
+          changePct: Number(t.priceChangePercent),
+          volume: Number(t.quoteVolume),
+        }),
+      )
+      .filter(Boolean)
+    return { tickers, viaProxy, transport: viaProxy ? 'proxy' : 'rest' }
+  } catch (e) {
+    restErr = e
+  }
+  // REST unreachable — try the live-stream transport before giving up.
+  try {
+    return await fetchMexcWS()
+  } catch (e2) {
+    throw new Error(`${restErr?.message || 'REST fail'} / ws: ${e2.message}`)
+  }
+}
+
+// MEXC live stream fallback: one channel pushes ALL tickers (no REST needed).
+// Different transport (wss) — may work where HTTPS is blocked.
+function fetchMexcWS(timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    let done = false
+    let ws = null
+    const finish = (fn, arg) => {
+      if (done) return
+      done = true
+      try {
+        ws?.close()
+      } catch {
+        /* ignore */
+      }
+      fn(arg)
+    }
+    const timer = setTimeout(() => finish(reject, new Error('ws timeout')), timeoutMs)
+    try {
+      ws = new WebSocket('wss://wbs-api.mexc.com/ws')
+    } catch (e) {
+      clearTimeout(timer)
+      reject(e)
+      return
+    }
+    ws.onerror = () => {
+      clearTimeout(timer)
+      finish(reject, new Error('ws error'))
+    }
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ method: 'SUBSCRIPTION', params: ['spot@public.miniTickers.v3.api.pb@UTC+8'] }))
+    }
+    ws.onmessage = (ev) => {
+      try {
+        const j = JSON.parse(ev.data)
+        const arr = Array.isArray(j) ? j : j.miniTickers || j.data || j.list || null
+        if (!arr || !Array.isArray(arr) || arr.length === 0) return
+        const tickers = arr
+          .map((t) => {
+            const price = Number(t.price ?? t.lastPrice)
+            const rate = Number(t.rate ?? t.priceChangePercent)
+            const vol = Number(t.volume)
+            if (!(price > 0)) return null
+            return norm({
+              exchange: 'mexc',
+              symbol: t.symbol,
+              price,
+              bid: price, // miniTicker has no bid/ask — indicative only
+              ask: price,
+              changePct: Number.isFinite(rate) ? rate * 100 : 0,
+              volume: vol > 0 ? vol : 0,
+            })
+          })
+          .filter(Boolean)
+        if (tickers.length === 0) return
+        clearTimeout(timer)
+        finish(resolve, { tickers, viaProxy: false, transport: 'ws' })
+      } catch {
+        /* keep waiting for a good frame */
+      }
+    }
+  })
 }
 
 const FETCHERS = { bybit: fetchBybit, htx: fetchHtx, mexc: fetchMexc }

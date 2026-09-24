@@ -8,7 +8,7 @@ const EX_BADGE = {
   mexc: 'bg-emerald-500/15 text-emerald-200',
 }
 
-const REFRESH_MS = 20000
+const REFRESH_DEFAULT = 20
 
 export default function Quotes() {
   const [tab, setTab] = useState('spot') // spot | arb
@@ -18,6 +18,7 @@ export default function Quotes() {
   const [status, setStatus] = useState({}) // { bybit: 'ok' | 'ok • прокси' | 'loading' | 'error:…' }
   const [updatedAt, setUpdatedAt] = useState(null)
   const [auto, setAuto] = useState(true)
+  const [refreshSec, setRefreshSec] = useState(REFRESH_DEFAULT)
   const [refreshing, setRefreshing] = useState(false)
   const firstLoad = useRef(true)
 
@@ -38,7 +39,7 @@ export default function Quotes() {
     results.forEach((r, i) => {
       const id = EXCHANGES[i].id
       if (r.status === 'fulfilled') {
-        st[id] = r.value.viaProxy ? 'ok • прокси' : 'ok'
+        st[id] = r.value.transport === 'ws' ? 'ok • ws-live' : r.value.viaProxy ? 'ok • прокси' : 'ok'
         all.push(...r.value.tickers)
       } else {
         st[id] = `error: ${r.reason?.message || 'нет данных'}`
@@ -57,9 +58,9 @@ export default function Quotes() {
 
   useEffect(() => {
     if (!auto) return
-    const id = setInterval(load, REFRESH_MS)
+    const id = setInterval(load, Math.max(5, refreshSec) * 1000)
     return () => clearInterval(id)
-  }, [auto, load])
+  }, [auto, load, refreshSec])
 
   const spotRows = useMemo(() => {
     const needle = q.trim().toUpperCase()
@@ -95,8 +96,13 @@ export default function Quotes() {
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-1.5 text-xs text-slate-400">
             <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="accent-indigo-500" />
-            авто (20с)
+            авто
           </label>
+          <select value={refreshSec} onChange={(e) => setRefreshSec(Number(e.target.value))} className="input w-auto px-2 py-1.5 text-xs" title="Интервал обновления">
+            {[5, 10, 20, 30, 60].map((s) => (
+              <option key={s} value={s}>{s}с</option>
+            ))}
+          </select>
           <button onClick={load} className="btn-ghost px-3 py-1.5 text-xs">
             <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} /> Обновить
           </button>
@@ -107,13 +113,13 @@ export default function Quotes() {
         {EXCHANGES.map((e) => (
           <span
             key={e.id}
-            title={status[e.id]?.startsWith('error') ? status[e.id] : `${e.name}: ${status[e.id] === 'ok • прокси' ? 'OK через прокси (данные могут запаздывать)' : 'OK'}`}
+            title={status[e.id]?.startsWith('error') ? status[e.id] : `${e.name}: ${status[e.id] === 'ok • прокси' ? 'OK через прокси (данные могут запаздывать)' : status[e.id] === 'ok • ws-live' ? 'OK через live-поток' : 'OK'}`}
             className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold ${
               String(status[e.id]).startsWith('ok') ? 'bg-emerald-500/10 text-emerald-200' : status[e.id]?.startsWith('error') ? 'bg-red-500/10 text-red-200' : 'bg-white/5 text-slate-400'
             }`}
           >
             <span className={`h-1.5 w-1.5 rounded-full ${String(status[e.id]).startsWith('ok') ? 'bg-emerald-400' : status[e.id]?.startsWith('error') ? 'bg-red-400' : 'bg-slate-500 animate-pulseSoft'}`} />
-            {e.name}{status[e.id] === 'ok • прокси' ? ' · proxy' : ''}
+            {e.name}{status[e.id] === 'ok • прокси' ? ' · proxy' : status[e.id] === 'ok • ws-live' ? ' · live' : ''}
           </span>
         ))}
       </div>
