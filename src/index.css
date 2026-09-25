@@ -148,6 +148,48 @@ input[type='number'] {
   background: #cbd5e1;
 }
 
+/* ---- Light theme: soften gradients (no harsh black-white transitions) ---- */
+.light .via-ink-900 {
+  --tw-gradient-stops: var(--tw-gradient-from), rgb(226 232 240 / 0.65), var(--tw-gradient-to);
+}
+
+.light .from-brand\/40,
+.light .from-brand\/30 {
+  --tw-gradient-from: rgb(49 49 255 / 0.1);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.light .from-emerald-500\/30 {
+  --tw-gradient-from: rgb(16 185 129 / 0.14);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.light .from-red-500\/30 {
+  --tw-gradient-from: rgb(239 68 68 / 0.12);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.light .from-violet-500\/30 {
+  --tw-gradient-from: rgb(139 92 246 / 0.12);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.light .from-mint\/30 {
+  --tw-gradient-from: rgb(81 139 123 / 0.14);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.light .from-brand\/20,
+.light .from-brand\/15 {
+  --tw-gradient-from: rgb(49 49 255 / 0.06);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.light .from-amber-400\/10 {
+  --tw-gradient-from: rgb(251 191 36 / 0.12);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
 @layer components {
   .card {
     @apply rounded-2xl border border-white/10 bg-ink-900/80 shadow-card backdrop-blur;
