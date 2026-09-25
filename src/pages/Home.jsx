@@ -9,6 +9,7 @@ import DashboardCards from '../components/DashboardCards.jsx'
 import ChartsSection from '../components/ChartsSection.jsx'
 import ProfitHeatmap from '../components/ProfitHeatmap.jsx'
 import GoalCard from '../components/GoalCard.jsx'
+import MonthlyReport from '../components/MonthlyReport.jsx'
 
 // Cabinet home: pure dashboard, no presentation hero (it lives on Landing).
 export default function Home() {
@@ -61,6 +62,7 @@ export default function Home() {
         <ProfitHeatmap deals={scoped} />
       </div>
       <ChartsSection deals={scoped} />
+      <MonthlyReport deals={deals} />
     </div>
   )
 }
