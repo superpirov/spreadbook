@@ -62,14 +62,14 @@ export default function ProfitHeatmap({ deals }) {
       </div>
       <p className="mb-3 text-xs text-slate-500">Зелёный — дни в плюс, красный — в минус. Ярче = больше сумма.</p>
       <div className="overflow-x-auto pb-1">
-        <div className="flex min-w-[560px] gap-1.5">
+        <div className="flex w-fit gap-1">
           {weeks.map((days, w) => (
-            <div key={w} className="grid flex-1 gap-1.5">
+            <div key={w} className="grid gap-1">
               {days.map((d, i) => (
                 <div
                   key={i}
                   title={`${d.date.toLocaleDateString('ru-RU')}: ${d.value === null ? '—' : formatMoney(Math.round(d.value * 100) / 100)}`}
-                  className={`aspect-square w-full rounded-[4px] ${color(d.value)}`}
+                  className={`h-3.5 w-3.5 rounded-[3px] sm:h-4 sm:w-4 ${color(d.value)}`}
                 />
               ))}
             </div>

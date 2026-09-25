@@ -16,6 +16,17 @@ export default function GoalCard({ deals }) {
     return calcNetProfit(deals.filter((d) => new Date(d.datetime) >= from))
   }, [deals])
 
+  const monthStats = useMemo(() => {
+    const now = new Date()
+    const from = new Date(now.getFullYear(), now.getMonth(), 1)
+    const monthDeals = deals.filter((d) => new Date(d.datetime) >= from)
+    const daysElapsed = Math.max(1, now.getDate())
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+    const avgDay = monthNet / daysElapsed
+    const forecast = avgDay * daysInMonth
+    return { count: monthDeals.length, avgDay, forecast, daysLeft: daysInMonth - daysElapsed }
+  }, [deals, monthNet])
+
   const pct = goalAmount > 0 ? Math.round((monthNet / goalAmount) * 100) : 0
   const bar = Math.max(0, Math.min(100, pct))
 
@@ -62,6 +73,31 @@ export default function GoalCard({ deals }) {
             />
           </div>
           {pct >= 100 && <p className="mt-1 text-xs font-bold text-emerald-300">Цель выполнена! 🎯</p>}
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+            <div className="rounded-xl bg-white/[0.04] px-3 py-2">
+              <div className="text-slate-400">Осталось</div>
+              <div className="text-sm font-extrabold">{formatMoney(Math.max(0, Math.round(goalAmount - monthNet)))}</div>
+            </div>
+            <div className="rounded-xl bg-white/[0.04] px-3 py-2">
+              <div className="text-slate-400">Дней осталось</div>
+              <div className="text-sm font-extrabold">{monthStats.daysLeft}</div>
+            </div>
+            <div className="rounded-xl bg-white/[0.04] px-3 py-2">
+              <div className="text-slate-400">Среднее в день</div>
+              <div className={`text-sm font-extrabold ${monthStats.avgDay >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                {monthStats.avgDay >= 0 ? '+' : ''}{formatMoney(Math.round(monthStats.avgDay))}
+              </div>
+            </div>
+            <div className="rounded-xl bg-white/[0.04] px-3 py-2">
+              <div className="text-slate-400">Прогноз на месяц</div>
+              <div className={`text-sm font-extrabold ${monthStats.forecast >= goalAmount ? 'text-emerald-300' : 'text-amber-200'}`}>
+                {monthStats.forecast >= 0 ? '+' : ''}{formatMoney(Math.round(monthStats.forecast))}
+              </div>
+            </div>
+          </div>
+          <p className="mt-2 text-[11px] text-slate-500">
+            Сделок в месяце: {monthStats.count} · {monthStats.forecast >= goalAmount ? 'Идёшь с опережением графика ✓' : 'Нужно ускориться, чтобы успеть'}
+          </p>
         </div>
       )}
     </div>
