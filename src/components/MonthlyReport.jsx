@@ -1,55 +1,79 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { FileSpreadsheet } from 'lucide-react'
 import { dealFiatTotal } from '../utils/calculations.js'
 import { formatMoney } from '../utils/formatters.js'
 
-const MONTHS = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек']
+const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
 
-function monthRows(deals) {
-  const map = new Map()
-  for (const d of deals) {
-    const dt = new Date(d.datetime)
-    const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
-    if (!map.has(key)) {
-      map.set(key, { key, year: dt.getFullYear(), month: dt.getMonth(), buy: 0, buyRaw: 0, sell: 0, fees: 0, deals: 0 })
-    }
-    const e = map.get(key)
+function aggregate(list) {
+  let buy = 0
+  let buyRaw = 0
+  let sell = 0
+  let fees = 0
+  for (const d of list) {
     const total = dealFiatTotal(d)
     const fee = Number(d.fee) || 0
-    e.fees += fee
-    e.deals += 1
+    fees += fee
     if (d.type === 'buy') {
-      e.buy += total + fee
-      e.buyRaw += total
-    } else e.sell += total - fee
+      buy += total + fee
+      buyRaw += total
+    } else sell += total - fee
   }
-  return [...map.values()]
-    .map((e) => {
-      const net = e.sell - e.buy
-      // Spread w/o fees (price edge), ROI with fees (bottom line).
-      const spread = e.buyRaw > 0 ? ((e.sell - e.buyRaw) / e.buyRaw) * 100 : null
-      const roi = e.buy > 0 ? (net / e.buy) * 100 : null
-      return { ...e, net, spread, roi }
-    })
-    .sort((a, b) => (a.key < b.key ? 1 : -1))
+  const net = sell - buy
+  return {
+    buy,
+    sell,
+    fees,
+    deals: list.length,
+    net,
+    // Spread w/o fees (price edge), ROI with fees (bottom line).
+    spread: buyRaw > 0 ? ((sell - buyRaw) / buyRaw) * 100 : null,
+    roi: buy > 0 ? (net / buy) * 100 : null,
+  }
 }
 
+const r2 = (n) => Math.round(n * 100) / 100
+
 export default function MonthlyReport({ deals }) {
-  const rows = useMemo(() => monthRows(deals), [deals])
+  const now = new Date()
+  const years = useMemo(() => {
+    const set = new Set(deals.map((d) => new Date(d.datetime).getFullYear()))
+    set.add(now.getFullYear())
+    return [...set].sort((a, b) => b - a)
+  }, [deals])
+  const [year, setYear] = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth())
+
+  const { rows, total } = useMemo(() => {
+    const daysInMonth = new Date(year, month + 1, 0).getDate()
+    const rows = []
+    for (let day = 1; day <= daysInMonth; day++) {
+      const list = deals.filter((d) => {
+        const dt = new Date(d.datetime)
+        return dt.getFullYear() === year && dt.getMonth() === month && dt.getDate() === day
+      })
+      rows.push({ day, ...aggregate(list) })
+    }
+    const all = deals.filter((d) => {
+      const dt = new Date(d.datetime)
+      return dt.getFullYear() === year && dt.getMonth() === month
+    })
+    return { rows, total: aggregate(all) }
+  }, [deals, year, month])
 
   const exportCSV = () => {
-    const head = ['Месяц', 'Покупки', 'Продажи', 'Комиссии', 'Чистая прибыль', 'Спред %', 'ROI %', 'Сделок']
+    const head = ['Дата', 'Покупки', 'Продажи', 'Комиссии', 'Чистая прибыль', 'Спред %', 'ROI %', 'Сделок']
     const lines = [head.join(';')]
     for (const r of rows) {
       lines.push(
         [
-          `${MONTHS[r.month]} ${r.year}`,
-          Math.round(r.buy * 100) / 100,
-          Math.round(r.sell * 100) / 100,
-          Math.round(r.fees * 100) / 100,
-          Math.round(r.net * 100) / 100,
-          r.spread === null ? '' : Math.round(r.spread * 100) / 100,
-          r.roi === null ? '' : Math.round(r.roi * 100) / 100,
+          `${String(r.day).padStart(2, '0')}.${String(month + 1).padStart(2, '0')}.${year}`,
+          r2(r.buy),
+          r2(r.sell),
+          r2(r.fees),
+          r2(r.net),
+          r.spread === null ? '' : r2(r.spread),
+          r.roi === null ? '' : r2(r.roi),
           r.deals,
         ].join(';'),
       )
@@ -58,64 +82,101 @@ export default function MonthlyReport({ deals }) {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `spreadbook-monthly-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `spreadbook-${year}-${String(month + 1).padStart(2, '0')}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
+
+  const hasData = rows.some((r) => r.deals > 0)
+
+  const cell = (v, nullText = '—') =>
+    v === null ? <span className="text-slate-600">{nullText}</span> : v
 
   return (
     <div className="card overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
         <div>
-          <h3 className="text-sm font-bold">Сводка по месяцам</h3>
-          <p className="text-xs text-slate-500">Покупки, продажи, спред и чистая прибыль за каждый календарный месяц</p>
+          <h3 className="text-sm font-bold">Сводка по дням</h3>
+          <p className="text-xs text-slate-500">Покупки, продажи, спред и чистая прибыль за каждый день месяца</p>
         </div>
-        {rows.length > 0 && (
-          <button onClick={exportCSV} className="btn-ghost px-3 py-1.5 text-xs">
-            <FileSpreadsheet size={14} /> CSV
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <select className="input w-auto" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
+            {MONTHS.map((m, i) => (
+              <option key={m} value={i}>{m}</option>
+            ))}
+          </select>
+          <select className="input w-auto" value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            {years.map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+          {hasData && (
+            <button onClick={exportCSV} className="btn-ghost px-3 py-1.5 text-xs">
+              <FileSpreadsheet size={14} /> CSV
+            </button>
+          )}
+        </div>
       </div>
-      {rows.length === 0 ? (
-        <p className="px-4 py-8 text-center text-sm text-slate-500">Пока нет сделок — сводка появится здесь.</p>
+      {!hasData ? (
+        <p className="px-4 py-8 text-center text-sm text-slate-500">
+          В {MONTHS[month].toLowerCase()} {year} сделок нет — сводка появится, когда добавите.
+        </p>
       ) : (
         <>
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead>
                 <tr className="text-xs uppercase tracking-wide text-slate-500">
-                  {['Месяц', 'Покупки', 'Продажи', 'Комиссии', 'Чистая прибыль', 'Спред', 'ROI', 'Сделок'].map((h) => (
+                  {['Дата', 'Покупки', 'Продажи', 'Комиссии', 'Чистая прибыль', 'Спред', 'ROI', 'Сделок'].map((h) => (
                     <th key={h} className="px-4 py-3 font-medium">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.key} className="border-t border-white/5 hover:bg-white/[0.03]">
-                    <td className="whitespace-nowrap px-4 py-2.5 font-bold">{MONTHS[r.month]} {r.year}</td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-red-300">−{formatMoney(Math.round(r.buy))}</td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-emerald-300">+{formatMoney(Math.round(r.sell))}</td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-slate-400">{formatMoney(Math.round(r.fees))}</td>
-                    <td className={`whitespace-nowrap px-4 py-2.5 font-extrabold ${r.net >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
-                      {r.net >= 0 ? '+' : ''}{formatMoney(Math.round(r.net))}
+                  <tr key={r.day} className={`border-t border-white/5 hover:bg-white/[0.03] ${r.deals === 0 ? 'opacity-50' : ''}`}>
+                    <td className="whitespace-nowrap px-4 py-2 font-bold">
+                      {String(r.day).padStart(2, '0')}.{String(month + 1).padStart(2, '0')}
                     </td>
-                    <td className={`whitespace-nowrap px-4 py-2.5 ${r.spread === null ? 'text-slate-600' : r.spread >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
-                      {r.spread === null ? '—' : `${r.spread >= 0 ? '+' : ''}${r.spread.toFixed(2)}%`}
+                    <td className="whitespace-nowrap px-4 py-2.5 text-red-300">{r.deals ? `−${formatMoney(Math.round(r.buy))}` : '—'}</td>
+                    <td className="whitespace-nowrap px-4 py-2.5 text-emerald-300">{r.deals ? `+${formatMoney(Math.round(r.sell))}` : '—'}</td>
+                    <td className="whitespace-nowrap px-4 py-2.5 text-slate-400">{r.deals ? formatMoney(Math.round(r.fees)) : '—'}</td>
+                    <td className={`whitespace-nowrap px-4 py-2.5 font-extrabold ${!r.deals ? '' : r.net >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                      {!r.deals ? '—' : `${r.net >= 0 ? '+' : ''}${formatMoney(Math.round(r.net))}`}
                     </td>
-                    <td className={`whitespace-nowrap px-4 py-2.5 ${r.roi === null ? 'text-slate-600' : r.roi >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
-                      {r.roi === null ? '—' : `${r.roi >= 0 ? '+' : ''}${r.roi.toFixed(2)}%`}
+                    <td className={`whitespace-nowrap px-4 py-2.5 ${r.spread === null ? '' : r.spread >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                      {cell(r.spread === null ? null : `${r.spread >= 0 ? '+' : ''}${r.spread.toFixed(2)}%`)}
                     </td>
-                    <td className="px-4 py-2.5 text-slate-300">{r.deals}</td>
+                    <td className={`whitespace-nowrap px-4 py-2.5 ${r.roi === null ? '' : r.roi >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                      {cell(r.roi === null ? null : `${r.roi >= 0 ? '+' : ''}${r.roi.toFixed(2)}%`)}
+                    </td>
+                    <td className="px-4 py-2.5 text-slate-300">{r.deals || '—'}</td>
                   </tr>
                 ))}
+                <tr className="border-t-2 border-white/15 bg-white/[0.04] font-bold">
+                  <td className="whitespace-nowrap px-4 py-2.5">Итого</td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-red-300">−{formatMoney(Math.round(total.buy))}</td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-emerald-300">+{formatMoney(Math.round(total.sell))}</td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-slate-400">{formatMoney(Math.round(total.fees))}</td>
+                  <td className={`whitespace-nowrap px-4 py-2.5 font-extrabold ${total.net >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                    {total.net >= 0 ? '+' : ''}{formatMoney(Math.round(total.net))}
+                  </td>
+                  <td className={`whitespace-nowrap px-4 py-2.5 ${total.spread === null ? '' : total.spread >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                    {cell(total.spread === null ? null : `${total.spread >= 0 ? '+' : ''}${total.spread.toFixed(2)}%`)}
+                  </td>
+                  <td className={`whitespace-nowrap px-4 py-2.5 ${total.roi === null ? '' : total.roi >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                    {cell(total.roi === null ? null : `${total.roi >= 0 ? '+' : ''}${total.roi.toFixed(2)}%`)}
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-300">{total.deals}</td>
+                </tr>
               </tbody>
             </table>
           </div>
           <div className="space-y-2 p-3 md:hidden">
-            {rows.map((r) => (
-              <div key={r.key} className="rounded-xl border border-white/10 bg-ink-950/60 p-3 text-sm">
+            {rows.filter((r) => r.deals > 0).map((r) => (
+              <div key={r.day} className="rounded-xl border border-white/10 bg-ink-950/60 p-3 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold">{MONTHS[r.month]} {r.year}</span>
+                  <span className="font-bold">{String(r.day).padStart(2, '0')}.{String(month + 1).padStart(2, '0')}.{year}</span>
                   <span className={`font-extrabold ${r.net >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
                     {r.net >= 0 ? '+' : ''}{formatMoney(Math.round(r.net))}
                   </span>
@@ -130,6 +191,15 @@ export default function MonthlyReport({ deals }) {
                 </div>
               </div>
             ))}
+            <div className="rounded-xl border border-white/15 bg-white/[0.04] p-3 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="font-bold">Итого за месяц</span>
+                <span className={`font-extrabold ${total.net >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                  {total.net >= 0 ? '+' : ''}{formatMoney(Math.round(total.net))}
+                </span>
+              </div>
+              <div className="mt-1 text-xs text-slate-400">Сделок: {total.deals} · спред {total.spread === null ? '—' : `${total.spread.toFixed(2)}%`} · ROI {total.roi === null ? '—' : `${total.roi.toFixed(2)}%`}</div>
+            </div>
           </div>
           <p className="border-t border-white/5 px-4 py-2 text-[11px] text-slate-500">
             Суммы агрегируют все фиатные валюты. Спред — ценовой перевес без комиссий; ROI — итог с комиссиями.
