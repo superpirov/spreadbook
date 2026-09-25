@@ -9,6 +9,7 @@ import { useStore } from './store/useStore.js'
 import { getAccessState } from './utils/billing.js'
 import Landing from './pages/Landing.jsx'
 import Login from './pages/Login.jsx'
+import Guide from './pages/Guide.jsx'
 import Home from './pages/Home.jsx'
 import Deals from './pages/Deals.jsx'
 import Contacts from './pages/Contacts.jsx'
@@ -99,6 +100,7 @@ export default function App() {
           }
         >
           <Route index element={<Home />} />
+          <Route path="guide" element={<Guide />} />
           <Route path="deals" element={<Deals />} />
           <Route path="contacts" element={<Contacts />} />
           <Route path="aml" element={<Aml />} />

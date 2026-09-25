@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
-import { LogIn, LogOut, Sun, Moon } from 'lucide-react'
+import { LogIn, LogOut, Sun, Moon, Compass, Send } from 'lucide-react'
 import { useAuth } from '../store/useAuth.js'
 import { isAdmin } from '../utils/admin.js'
 import { getTheme, applyTheme } from '../utils/theme.js'
@@ -38,17 +38,27 @@ export default function Header({ mode = 'public' }) {
   if (mode === 'cabinet') {
     return (
       <header className="sticky top-0 z-40 border-b border-white/10 bg-ink-950/85 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-7xl items-center gap-3 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex w-full max-w-7xl items-center gap-2 px-4 py-3 sm:px-6">
           <Link to="/app"><Logo /></Link>
           <nav className="ml-2 hidden items-center gap-1 md:flex">
-            <CabLink to="/app">Дашборд</CabLink>
-            <CabLink to="/app/deals">Сделки</CabLink>
-            <CabLink to="/app/contacts">Люди</CabLink>
-            <CabLink to="/app/aml">AML</CabLink>
-            <CabLink to="/app/referrals">Рефералы</CabLink>
-            <CabLink to="/app/billing">Тариф</CabLink>
-            <CabLink to="/app/settings">Бэкап</CabLink>
-            {isAdmin(user) && <CabLink to="/app/admin">Админ</CabLink>}
+            <NavLink
+              to="/app/guide"
+              className={({ isActive }) =>
+                `inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition ${
+                  isActive ? 'bg-white/10 text-white' : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                }`
+              }
+            >
+              <Compass size={15} /> Обзор площадки
+            </NavLink>
+            <a
+              href="https://t.me/ruslanpirov"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 px-3 py-2 text-sm font-bold text-black shadow transition hover:brightness-110"
+            >
+              <Send size={15} /> Поддержка
+            </a>
           </nav>
           <div className="ml-auto flex items-center gap-2">
             <ThemeToggle />
@@ -64,8 +74,9 @@ export default function Header({ mode = 'public' }) {
             </button>
           </div>
         </div>
-        {/* Mobile cabinet nav */}
+        {/* Mobile cabinet nav (sidebar is hidden on mobile — this row is the menu) */}
         <nav className="flex gap-1 overflow-x-auto border-t border-white/5 px-4 py-2 md:hidden">
+          <CabLink to="/app/guide">Обзор</CabLink>
           <CabLink to="/app">Дашборд</CabLink>
           <CabLink to="/app/deals">Сделки</CabLink>
           <CabLink to="/app/contacts">Люди</CabLink>
@@ -74,6 +85,9 @@ export default function Header({ mode = 'public' }) {
           <CabLink to="/app/billing">Тариф</CabLink>
           <CabLink to="/app/settings">Бэкап</CabLink>
           {isAdmin(user) && <CabLink to="/app/admin">Админ</CabLink>}
+          <a href="https://t.me/ruslanpirov" target="_blank" rel="noreferrer" className="whitespace-nowrap rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 px-3 py-2 text-sm font-bold text-black">
+            Поддержка
+          </a>
         </nav>
       </header>
     )
