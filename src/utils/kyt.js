@@ -261,10 +261,12 @@ export async function analyzeKyt(address, index, self, opts = {}) {
   }
 
   // Security flags on top counterparties (shared Tronscan key — budgeted to top 8).
+  // Canonical contracts are skipped: their flags are meaningless.
   const topForSec = [...peers.entries()]
     .sort((x, y) => y[1].usdtIn + y[1].usdtOut + y[1].txs - (x[1].usdtIn + x[1].usdtOut + x[1].txs))
     .slice(0, 8)
     .map(([name]) => name)
+    .filter((name) => !getCanonical(name))
   if (topForSec.length > 0) {
     const stage = 'Флаги контрагентов (Tronscan)…'
     const secFn = async (peerAddr) => {
@@ -327,6 +329,17 @@ export async function analyzeKyt(address, index, self, opts = {}) {
   if (usdtIn > 0 && usdtOut / usdtIn > 0.9 && txTotal >= 4 && (lifespanH ?? 999) < 72) {
     score += 15
     add(15, 'Транзит: почти всё полученное ушло дальше', `Вышло ${Math.round((usdtOut / usdtIn) * 100)}% от вошедшего USDT`)
+  }
+
+  // Consensus with PublicAML: our total never goes below their score.
+  // Their DB (625M+ addresses, full graph) sees more than our lists —
+  // anchoring removes systematic underestimation, our own findings still win via max().
+  if (Number.isFinite(pam?.score)) {
+    const anchor = Math.round(pam.score)
+    if (anchor > score) {
+      add(anchor - score, `Консенсус с PublicAML: их скор ${anchor}`, pam.label || pam.category || '')
+      score = anchor
+    }
   }
 
   score = Math.min(100, Math.round(score))
