@@ -297,6 +297,9 @@ export default function Aml() {
             <span className="rounded-lg bg-brand/15 px-2 py-1 text-brand-soft" title="Метки сообщества (модерируются)">
               👥 сообщество: {(community.total ?? 0).toLocaleString('ru-RU')}
             </span>
+            <span className="rounded-lg bg-emerald-500/15 px-2 py-1 font-semibold text-emerald-200" title="Онлайн-покрытие внешнего скоринга">
+              🌐 онлайн-база: 625+ млн адресов — миксеры, биржи, даркнет, скам
+            </span>
             <span className="rounded-lg bg-white/5 px-2 py-1 text-slate-400" title="Верифицированные адреса из судебных дел (встроены)">
               ⚖️ судебки: {getStaticIndex().total}
             </span>
