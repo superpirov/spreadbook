@@ -359,20 +359,21 @@ export default function Aml() {
                 <Flag size={13} /> Знаете этот адрес как мошеннический? Пожаловаться
               </button>
             ) : (
-              <form onSubmit={sendReport} className="flex flex-col gap-2 sm:flex-row">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <input
                   className="input"
                   placeholder="Причина: скам, фишинг, взлом…"
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') sendReport(e) }}
                 />
                 <div className="flex shrink-0 gap-2">
-                  <button type="submit" disabled={reportBusy || !reason.trim()} className="btn-primary px-3 py-2 text-xs">
+                  <button type="button" onClick={sendReport} disabled={reportBusy || !reason.trim()} className="btn-primary px-3 py-2 text-xs">
                     {reportBusy ? 'Отправка…' : 'Отправить'}
                   </button>
                   <button type="button" onClick={() => setShowReport(false)} className="btn-ghost px-3 py-2 text-xs">✕</button>
                 </div>
-              </form>
+              </div>
             )}
             {reportMsg && <p className="mt-2 text-xs text-slate-300">{reportMsg}</p>}
           </div>
