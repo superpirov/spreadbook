@@ -1,10 +1,10 @@
-import { HashRouter, Routes, Route, Navigate, Outlet, useLocation, Link } from 'react-router-dom'
-import { Lock } from 'lucide-react'
+import { HashRouter, Routes, Route, Navigate, Outlet, useLocation, Link, useNavigate } from 'react-router-dom'
+import { Lock, Ban } from 'lucide-react'
 import Header from './components/Header.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 import Billing from './components/Billing.jsx'
-import { useCurrentSub } from './store/useAuth.js'
+import { useAuth, useCurrentSub } from './store/useAuth.js'
 import { useStore } from './store/useStore.js'
 import { getAccessState } from './utils/billing.js'
 import Landing from './pages/Landing.jsx'
@@ -24,8 +24,31 @@ function CabinetLayout() {
   const sub = useCurrentSub()
   const cloudError = useStore((s) => s.cloudError)
   const cloudReady = useStore((s) => s.cloudReady)
+  const banned = useStore((s) => s.banned)
+  const logout = useAuth((s) => s.logout)
+  const nav = useNavigate()
   const loc = useLocation()
   const locked = getAccessState(sub).status === 'expired' && !loc.pathname.endsWith('/billing')
+
+  if (banned) {
+    return (
+      <div className="grid min-h-screen place-items-center px-4">
+        <div className="card max-w-md p-8 text-center">
+          <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-red-500/15 text-red-300">
+            <Ban size={22} />
+          </span>
+          <h1 className="mt-3 text-xl font-extrabold">Аккаунт заблокирован</h1>
+          <p className="mt-1 text-sm text-slate-400">
+            Доступ ограничен администратором. Если это ошибка — напишите в поддержку.
+          </p>
+          <div className="mt-4 flex justify-center gap-2">
+            <a href="https://t.me/ruslanpirov" target="_blank" rel="noreferrer" className="btn-ghost">Поддержка</a>
+            <button className="btn-ghost" onClick={() => { logout(); nav('/') }}>Выйти</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen">

@@ -89,6 +89,7 @@ export const useStore = create((set, get) => ({
   blacklist: [], // [counterparty names]
   goalAmount: 0, // monthly profit goal (fiat-agnostic number)
   watchlist: [], // [{ address, network, addedAt, lastVerdict, lastCheck, prevVerdict, ack }]
+  banned: false, // set by owner; blocked screen instead of cabinet
   amlHistory: [], // [{ id, address, network, verdict, matches, frozen, counterparty, createdAt }]
   aml: {}, // { [contactName]: { status: 'clean'|'bad', at } }
   cloudReady: false, // first snapshot received
@@ -196,6 +197,7 @@ export const useStore = create((set, get) => ({
           blacklist: Array.isArray(d.blacklist) ? d.blacklist : get().blacklist,
           goalAmount: Number(d.goalAmount) || 0,
           watchlist: Array.isArray(d.watchlist) ? d.watchlist : get().watchlist,
+          banned: d.banned === true,
         })
         get().saveCache()
       },
@@ -224,7 +226,7 @@ export const useStore = create((set, get) => ({
     })
     unsubs = []
     boundUid = null
-    set({ deals: [], ratings: {}, profiles: {}, knownCounterparties: [], period: 'all', amlHistory: [], aml: {}, templates: [], blacklist: [], goalAmount: 0, watchlist: [], cloudReady: false, cloudError: null })
+    set({ deals: [], ratings: {}, profiles: {}, knownCounterparties: [], period: 'all', amlHistory: [], aml: {}, templates: [], blacklist: [], goalAmount: 0, watchlist: [], banned: false, cloudReady: false, cloudError: null })
   },
 
   // One-time upload of the pre-cloud local database (only if cloud is empty).

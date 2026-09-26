@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ShieldAlert, Minus, Plus, ExternalLink, RefreshCw, Flag, Check, X, Trash2, Search, Banknote } from 'lucide-react'
+import { ShieldAlert, Minus, Plus, ExternalLink, RefreshCw, Flag, Check, X, Trash2, Search, Banknote, Ban, ChevronDown } from 'lucide-react'
 import { useAuth } from '../store/useAuth.js'
 import { isAdmin } from '../utils/admin.js'
-import { fetchAllUsers, adjustMonths, fetchReports, moderateReport, deleteReport, fetchCashPayouts, markPayoutPaid } from '../utils/users.js'
+import { fetchAllUsers, adjustMonths, adjustDays, setBanned, fetchUserDeals, fetchReports, moderateReport, deleteReport, fetchCashPayouts, markPayoutPaid } from '../utils/users.js'
 import { getAccessState, tronscanUrl } from '../utils/billing.js'
-import { formatDate, formatDateTime } from '../utils/formatters.js'
+import { dealFiatTotal } from '../utils/calculations.js'
+import { formatDate, formatDateTime, formatMoney } from '../utils/formatters.js'
 
 const accessOf = (u) => getAccessState({ plan: u.plan, trialStart: u.trialStart, expiresAt: u.expiresAt })
 
@@ -20,6 +21,8 @@ export default function Admin() {
   const [query, setQuery] = useState('')
   const [payouts, setPayouts] = useState([])
   const [payoutsError, setPayoutsError] = useState('')
+  const [expanded, setExpanded] = useState(null) // uid with open details
+  const [details, setDetails] = useState({}) // { [uid]: { loading, day, week, month, last } }
 
   const loadPayouts = useCallback(async () => {
     try {
@@ -99,15 +102,64 @@ export default function Admin() {
     )
   }
 
-  const adjust = async (u, delta) => {
+  const adjust = async (u, delta, unit = 'month') => {
     setBusyUid(u.uid)
     try {
-      const next = await adjustMonths(u.uid, u.expiresAt, delta)
+      const next = unit === 'week'
+        ? await adjustDays(u.uid, u.expiresAt, delta * 7)
+        : await adjustMonths(u.uid, u.expiresAt, delta)
       setUsers((list) => list.map((x) => (x.uid === u.uid ? { ...x, plan: 'pro', expiresAt: next } : x)))
     } catch {
       setError('Не удалось изменить подписку. Проверьте rules Firestore.')
     } finally {
       setBusyUid(null)
+    }
+  }
+
+  const ban = async (u) => {
+    const to = !u.banned
+    if (to && !window.confirm(`Заблокировать ${u.email}? Кабинет станет недоступен.`)) return
+    try {
+      await setBanned(u.uid, to)
+      setUsers((list) => list.map((x) => (x.uid === u.uid ? { ...x, banned: to } : x)))
+    } catch {
+      setError('Не удалось изменить блокировку.')
+    }
+  }
+
+  const toggleDetails = async (u) => {
+    if (expanded === u.uid) {
+      setExpanded(null)
+      return
+    }
+    setExpanded(u.uid)
+    if (details[u.uid] && !details[u.uid].loading) return
+    setDetails((d) => ({ ...d, [u.uid]: { loading: true } }))
+    try {
+      const deals = await fetchUserDeals(u.uid)
+      const now = new Date()
+      const dayStart = new Date(now)
+      dayStart.setHours(0, 0, 0, 0)
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+      const weekAgo = now.getTime() - 7 * 24 * 3600 * 1000
+      const sum = (list) => list.reduce((s, d) => s + dealFiatTotal(d), 0)
+      const dayDeals = deals.filter((d) => new Date(d.datetime) >= dayStart)
+      const weekDeals = deals.filter((d) => new Date(d.datetime).getTime() >= weekAgo)
+      const monthDeals = deals.filter((d) => new Date(d.datetime) >= monthStart)
+      const last = deals.sort((a, b) => new Date(b.datetime) - new Date(a.datetime))[0]
+      setDetails((d) => ({
+        ...d,
+        [u.uid]: {
+          loading: false,
+          day: { n: dayDeals.length, vol: sum(dayDeals) },
+          week: { n: weekDeals.length, vol: sum(weekDeals) },
+          month: { n: monthDeals.length, vol: sum(monthDeals) },
+          total: deals.length,
+          last: last ? last.datetime : null,
+        },
+      }))
+    } catch {
+      setDetails((d) => ({ ...d, [u.uid]: { loading: false, error: true } }))
     }
   }
 
@@ -178,10 +230,18 @@ export default function Admin() {
             <tbody>
               {visible.map((u) => {
                 const st = accessOf(u)
+                const det = details[u.uid]
                 return (
+                  <>
                   <tr key={u.uid} className="border-t border-white/5 hover:bg-white/[0.03]">
                     <td className="px-4 py-2.5">
-                      <div className="font-semibold">{u.name || '—'}</div>
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => toggleDetails(u)} title="Активность пользователя" className="rounded-md p-1 text-slate-500 hover:bg-white/10 hover:text-white">
+                          <ChevronDown size={14} className={expanded === u.uid ? 'rotate-180 transition' : 'transition'} />
+                        </button>
+                        <div className="font-semibold">{u.name || '—'}</div>
+                        {u.banned && <span className="rounded bg-red-500/20 px-1.5 py-px text-[10px] font-bold text-red-200">БАН</span>}
+                      </div>
                       <div className="text-xs text-slate-400">{u.email}</div>
                       <div className="text-[11px] text-slate-500">рег. {u.createdAt ? formatDate(u.createdAt) : '—'}</div>
                     </td>
@@ -199,19 +259,36 @@ export default function Admin() {
                       ) : '—'}
                     </td>
                     <td className="whitespace-nowrap px-4 py-2.5">
-                      <div className="flex gap-1.5">
+                      <div className="flex flex-wrap gap-1.5">
                         <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1)} title="Убрать 1 месяц" className="rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-bold text-red-200 hover:bg-red-500/25 disabled:opacity-50">
                           <Minus size={13} /> 1 мес
                         </button>
                         <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1)} title="Добавить 1 месяц бесплатно" className="rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50">
                           <Plus size={13} /> 1 мес
                         </button>
+                        <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1, 'week')} title="Убрать 1 неделю" className="rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-bold text-red-200 hover:bg-red-500/25 disabled:opacity-50">
+                          −1 нед
+                        </button>
+                        <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1, 'week')} title="Добавить 1 неделю бесплатно" className="rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50">
+                          +1 нед
+                        </button>
                         <button disabled={busyUid === u.uid} onClick={() => adjust(u, 12)} title="Добавить 12 месяцев бесплатно" className="rounded-lg bg-amber-400/15 px-2.5 py-1.5 text-xs font-bold text-amber-200 hover:bg-amber-400/25 disabled:opacity-50">
                           <Plus size={13} /> 12 мес
+                        </button>
+                        <button onClick={() => ban(u)} title={u.banned ? 'Разблокировать' : 'Заблокировать'} className={`rounded-lg px-2.5 py-1.5 text-xs font-bold ${u.banned ? 'bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25' : 'bg-white/5 text-slate-300 hover:bg-red-500/20 hover:text-red-200'}`}>
+                          {u.banned ? 'Разбанить' : 'Бан'}
                         </button>
                       </div>
                     </td>
                   </tr>
+                  {expanded === u.uid && (
+                    <tr key={`${u.uid}-det`} className="border-t border-white/5 bg-white/[0.02]">
+                      <td colSpan={5} className="px-4 py-3">
+                        <UserDetails det={det} />
+                      </td>
+                    </tr>
+                  )}
+                  </>
                 )
               })}
               {visible.length === 0 && !loading && (
@@ -231,16 +308,31 @@ export default function Admin() {
               <div key={u.uid} className="rounded-xl border border-white/10 bg-ink-950/60 p-3 text-sm">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="truncate font-semibold">{u.name || u.email}</div>
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={() => toggleDetails(u)} className="rounded-md p-1 text-slate-500 hover:bg-white/10 hover:text-white">
+                        <ChevronDown size={14} className={expanded === u.uid ? 'rotate-180 transition' : 'transition'} />
+                      </button>
+                      <span className="truncate font-semibold">{u.name || u.email}</span>
+                      {u.banned && <span className="rounded bg-red-500/20 px-1.5 py-px text-[10px] font-bold text-red-200">БАН</span>}
+                    </div>
                     <div className="truncate text-xs text-slate-400">{u.email}</div>
                   </div>
                   <StatusPill st={st} />
                 </div>
                 <div className="mt-1 text-xs text-slate-400">До: {u.expiresAt ? formatDateTime(u.expiresAt) : '—'}</div>
-                <div className="mt-2 flex gap-1.5">
+                {expanded === u.uid && (
+                  <div className="mt-2 rounded-lg bg-white/[0.03] p-2.5">
+                    <UserDetails det={details[u.uid]} />
+                  </div>
+                )}
+                <div className="mt-2 flex flex-wrap gap-1.5">
                   <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1)} className="rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-bold text-red-200 disabled:opacity-50">−1 мес</button>
                   <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1)} className="rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-xs font-bold text-emerald-200 disabled:opacity-50">+1 мес</button>
-                  <button disabled={busyUid === u.uid} onClick={() => adjust(u, 12)} className="rounded-lg bg-amber-400/15 px-2.5 py-1.5 text-xs font-bold text-amber-200 disabled:opacity-50">+12 мес</button>
+                  <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1, 'week')} className="rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-bold text-red-200 disabled:opacity-50">−1 нед</button>
+                  <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1, 'week')} className="rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-xs font-bold text-emerald-200 disabled:opacity-50">+1 нед</button>
+                  <button onClick={() => ban(u)} className="rounded-lg bg-white/5 px-2.5 py-1.5 text-xs font-bold text-slate-300 hover:bg-red-500/20 hover:text-red-200">
+                    {u.banned ? 'Разбанить' : 'Бан'}
+                  </button>
                 </div>
               </div>
             )
@@ -310,6 +402,28 @@ export default function Admin() {
         <p className="border-t border-white/5 px-4 py-2 text-[11px] text-slate-500">
           Переведите USDT вручную на указанный кошелёк и нажмите «Выплачено». 25% считаются от тарифа реферала.
         </p>
+      </div>
+    </div>
+  )
+}
+
+function UserDetails({ det }) {
+  if (!det || det.loading) return <p className="text-xs text-slate-500">Загружаем активность…</p>
+  if (det.error) return <p className="text-xs text-red-300">Не удалось загрузить сделки.</p>
+  const row = (t, v, vol) => (
+    <div className="flex items-center justify-between py-0.5">
+      <span className="text-slate-400">{t}</span>
+      <span className="font-semibold">{v} · {formatMoney(Math.round(vol))}</span>
+    </div>
+  )
+  return (
+    <div className="text-xs">
+      {row('Сегодня', `${det.day.n} сд.`, det.day.vol)}
+      {row('7 дней', `${det.week.n} сд.`, det.week.vol)}
+      {row('Календ. месяц', `${det.month.n} сд.`, det.month.vol)}
+      <div className="mt-1 flex items-center justify-between border-t border-white/5 pt-1 text-slate-400">
+        <span>Всего сделок: {det.total}</span>
+        <span>Последняя: {det.last ? formatDateTime(det.last) : '—'}</span>
       </div>
     </div>
   )

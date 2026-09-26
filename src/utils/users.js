@@ -60,10 +60,18 @@ export async function fetchAllUsers() {
 // Adding extends from max(now, current expiry) and forces plan='pro'.
 // Returns the new expiresAt ISO string.
 export async function adjustMonths(uid, currentExpiresAt, deltaMonths) {
-  const month = 30 * 24 * 60 * 60 * 1000
+  return adjustTime(uid, currentExpiresAt, deltaMonths * 30 * 24 * 60 * 60 * 1000)
+}
+
+// Same in days (e.g. ±7 for a week).
+export async function adjustDays(uid, currentExpiresAt, deltaDays) {
+  return adjustTime(uid, currentExpiresAt, deltaDays * 24 * 60 * 60 * 1000)
+}
+
+async function adjustTime(uid, currentExpiresAt, deltaMs) {
   const cur = currentExpiresAt ? new Date(currentExpiresAt).getTime() : 0
-  const base = deltaMonths > 0 ? Math.max(Date.now(), cur) : cur || Date.now()
-  const next = new Date(base + deltaMonths * month).toISOString()
+  const base = deltaMs > 0 ? Math.max(Date.now(), cur) : cur || Date.now()
+  const next = new Date(base + deltaMs).toISOString()
   await updateDoc(userDoc(uid), {
     plan: 'pro',
     expiresAt: next,
@@ -74,6 +82,18 @@ export async function adjustMonths(uid, currentExpiresAt, deltaMonths) {
 
 export async function setPlanPro(uid, expiresAt, note = '') {
   await updateDoc(userDoc(uid), { plan: 'pro', expiresAt, updatedAt: serverTimestamp(), adminNote: note || null })
+}
+
+// Ban / unban: banned users see a blocked screen instead of the cabinet
+// (takes effect on their next login/refresh).
+export async function setBanned(uid, banned) {
+  await updateDoc(userDoc(uid), { banned: !!banned, updatedAt: serverTimestamp() })
+}
+
+// Admin inspection: full deal list of any user (rules allow admin reads).
+export async function fetchUserDeals(uid) {
+  const snap = await getDocs(collection(db, 'users', uid, 'deals'))
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
 }
 
 // --- Community scam reports (shared blacklist with admin moderation) ---
