@@ -108,7 +108,7 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /referrals/{refId} {
-      allow read: if request.auth != null && (resource.data.referrerUid == request.auth.uid || request.auth.token.email == 'pirov.ru@yandex.ru');
+      allow read: if request.auth != null && (resource.data.referrerUid == request.auth.uid || resource.data.refereeUid == request.auth.uid || request.auth.token.email == 'pirov.ru@yandex.ru');
       allow create: if request.auth != null && request.resource.data.refereeUid == request.auth.uid;
       allow update: if request.auth != null && (resource.data.referrerUid == request.auth.uid || resource.data.refereeUid == request.auth.uid || request.auth.token.email == 'pirov.ru@yandex.ru');
       allow delete: if false;
