@@ -134,6 +134,7 @@ service cloud.firestore {
 - Живой статус заморозки USDT: Ethereum `isBlackListed` (`0xe47d6060`) через public RPC, TRON — `triggerconstantcontract` в Trongrid. Недоступность RPC = «не проверено», не ошибка.
 - Tronscan Security (`checkTronSecurity`, нужен `TRONSCAN_API_KEY`): `red_tag` и риск-флаги идут в вердикт; те же флаги опрашиваются у топ-8 прямых контрагентов в KYT.
 - Tronscan-профиль без ключа (`checkTronProfile`): `risk`-флаг из `account/list` (+вердикт, малый вес +15 в KYT) и поведенческие теги из `account/tag` (показ в отчёте). Проверено: `risk=false` даже на замороженных адресах — детектором фризов не является.
+- PublicAML (бесплатный KYT API без ключей, `checkPublicAML`): скор 0–100, сущность, санкции, direct/indirect экспозиция и propagated sources с хопами. В скоринге: санкции +60, скор ≥70 → +40, ≥40 → +15. Fail-soft слой молодого сервиса — никогда не блокирует остальные сигналы.
 - Tronscan Security: `api/security/account/data` с ключом владельца (`TRONSCAN_API_KEY` в `aml.js` — публичен по дизайну, read-only, денег через него украсть нельзя; при drain'е квоты ротируется в ЛК Tronscan одной строчкой). Флаги (`red_tag` и др.) идут в вердикт.
 - Кэш вердиктов 24 ч (`findRecentCheck`): повторная проверка того же адреса API не опрашивает, в дневной лимит не считается. Константа `CHECK_CACHE_HOURS`.
 - Allowlist канонических контрактов (`getCanonical`): официальный USDT TRC-20/ERC-20 и USDC ERC-20 никогда не флагуются — Tronscan отдаёт `is_black_list=true` на сам контракт USDT, т.к. токен администрирует чёрный список, а не заблокирован.

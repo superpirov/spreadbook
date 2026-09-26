@@ -15,6 +15,7 @@ import {
   checkTetherFrozen,
   checkTronSecurity,
   checkTronProfile,
+  checkPublicAML,
   getCanonical,
   getCommunityIndex,
   getStaticIndex,
@@ -236,15 +237,20 @@ export default function Aml() {
       const { risk: tronRisk, tags: tronTags } = (!canonical && base.network === 'tron')
         ? await checkTronProfile(a)
         : { risk: false, tags: [] }
+      const pam = !canonical
+        ? await checkPublicAML(a)
+        : { score: null, label: '', category: '', sanctioned: false, direct: null, indirect: null, sources: [], error: null }
       const matches = [...base.matches, ...secFlags]
       if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
       if (tronRisk === true) matches.push({ source: 'TRONSCAN_RISK', label: 'Tronscan: risk-флаг' })
+      if (pam.sanctioned) matches.push({ source: 'PUBLICAML_SANCTION', label: `PublicAML: санкции${pam.label ? ` (${pam.label})` : ''}` })
+      else if (Number.isFinite(pam.score) && pam.score >= 70) matches.push({ source: 'PUBLICAML_SCORE', label: `PublicAML: скор ${Math.round(pam.score)}${pam.label ? ` (${pam.label})` : ''}` })
       const verdict = matches.length > 0 ? 'bad' : base.verdict
-      const r = { address: base.address, network: base.network, verdict, matches, frozen, tags: tronTags, rpcError: rpcError || '', secError: secError || '', canonical: canonical || '', cached: false, kyt: null }
+      const r = { address: base.address, network: base.network, verdict, matches, frozen, tags: tronTags, pam, rpcError: rpcError || '', secError: secError || '', canonical: canonical || '', cached: false, kyt: null }
       if (base.network === 'tron') {
         setDeepStage('Собираю историю транзакций…')
-        try {
-          r.kyt = await analyzeKyt(a, lookupIndex, { verdict, matches, frozen }, {
+          try {
+            r.kyt = await analyzeKyt(a, lookupIndex, { verdict, matches, frozen, pam }, {
             depth,
             community: community.index,
             onProgress: ({ stage, done, total }) => setDeepStage(total > 1 ? `${stage} (${done}/${total})` : stage),
@@ -348,6 +354,9 @@ export default function Aml() {
           </p>
         )}
         {result && <VerdictCard r={result} />}
+        {result?.pam && (result.pam.score !== null || result.pam.sanctioned || result.pam.label) && (
+          <PamBlock pam={result.pam} />
+        )}
         {result && !result.kyt && result.network !== 'tron' && result.verdict !== 'unknown' && (
           <p className="mt-2 text-xs text-slate-500">Детальный разбор с графом связей доступен только для TRON — для остальных сетей показан скрининг по спискам и фризам.</p>
         )}
@@ -487,6 +496,45 @@ export default function Aml() {
   )
 }
 
+export function PamBlock({ pam }) {
+  if (!pam || (!Number.isFinite(pam.score) && !pam.sanctioned && !pam.label)) return null
+  return (
+    <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400">PublicAML · сущность и источники</h4>
+        {Number.isFinite(pam.score) && (
+          <span className={`font-mono text-sm font-extrabold ${pam.score >= 70 ? 'text-red-300' : pam.score >= 40 ? 'text-amber-200' : 'text-emerald-300'}`}>
+            {Math.round(pam.score)}/100
+          </span>
+        )}
+      </div>
+      {(pam.label || pam.category) && (
+        <p className="mt-1 text-sm">
+          <b>{pam.label || 'Без названия'}</b>
+          {pam.category && <span className="text-slate-400"> · {pam.category}</span>}
+          {pam.sanctioned && <span className="ml-2 rounded bg-red-500/15 px-1.5 py-0.5 text-[11px] font-bold text-red-200">санкции</span>}
+        </p>
+      )}
+      {(pam.direct !== null || pam.indirect !== null) && pam.direct !== undefined && (
+        <p className="mt-1 text-xs text-slate-400">
+          Прямая экспозиция: {pam.direct ?? '—'} · косвенная: {pam.indirect ?? '—'}
+        </p>
+      )}
+      {pam.sources?.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {pam.sources.slice(0, 6).map((s, i) => (
+            <li key={i} className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-2.5 py-1.5 text-xs">
+              <span className="min-w-0 flex-1 truncate text-slate-200">{s.category || 'источник'}</span>
+              {s.hops !== null && s.hops !== undefined && <span className="shrink-0 text-slate-500">{s.hops} хоп</span>}
+              <span className="shrink-0 font-mono font-bold text-slate-300">{s.score}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 export function KytReport({ address, kyt }) {
   const lvl = KYT_LEVEL[kyt.level] || KYT_LEVEL.low
   const ring = lvl.cls === 'red' ? '#f87171' : lvl.cls === 'amber' ? '#fbbf24' : '#34d399'
@@ -530,14 +578,14 @@ export function KytReport({ address, kyt }) {
           ))}
         </ul>
       ) : (
-        <p className="mt-3 rounded-xl bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">Подозрительных факторов не выявлено: возраст, активность и связи в норме.</p>
-      )}
+          <p className="mt-3 rounded-xl bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">Подозрительных факторов не выявлено: возраст, активность и связи в норме.</p>
+        )}
+      <PamBlock pam={kyt.pam} />
       {kyt.dirtyPeers.length > 0 && (
         <div className="mt-3">
           <h4 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-red-300">
             Санкционные связи ({kyt.dirtyPeers.length}) · глубина: {kyt.depth || 1} хоп{(kyt.depth || 1) === 1 ? '' : 'а'}
-          </h4>
-          <div className="space-y-1">
+          </h4>          <div className="space-y-1">
             {[1, 2, 3, 4, 5].map((hop) =>
               kyt.dirtyPeers
                 .filter((p) => (p.hop || 1) === hop)

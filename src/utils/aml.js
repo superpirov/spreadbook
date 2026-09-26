@@ -488,3 +488,53 @@ export async function checkTronProfile(rawAddress) {
   }
   return { risk, tags, error }
 }
+
+// --- PublicAML (free KYT API, no key): score 0-100 + entity attribution ---
+// POST https://intelapi.publicaml.org/v1/enrich { addresses: [{wallet_address, chain}] }.
+// Returns { score, label, category, sanctioned, direct, indirect, sources[], error }.
+// Young free service — fail-soft layer, never blocks other signals.
+
+const PUBLICAML_CHAINS = { tron: 'TRON', evm: 'ETH', btc: 'BTC' }
+
+export async function checkPublicAML(rawAddress) {
+  const a = String(rawAddress || '').trim()
+  const net = detectNetwork(a)
+  const chain = PUBLICAML_CHAINS[net]
+  const empty = { score: null, label: '', category: '', sanctioned: false, direct: null, indirect: null, sources: [], error: null }
+  if (!chain) return empty
+  const c = new AbortController()
+  const t = setTimeout(() => c.abort(), 20000)
+  try {
+    const res = await fetch('https://intelapi.publicaml.org/v1/enrich', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: c.signal,
+      body: JSON.stringify({
+        addresses: [{ wallet_address: a, chain }],
+        include: ['aml_score', 'category', 'counterparties', 'source_of_funds'],
+        top_n: 5,
+      }),
+    })
+    if (!res.ok) throw new Error(`PublicAML: HTTP ${res.status}`)
+    const j = await res.json()
+    const e = Array.isArray(j?.entities) ? j.entities[0] : null
+    if (!e) return { ...empty, error: 'PublicAML: пустой ответ' }
+    const bd = e.aml_score_breakdown || {}
+    return {
+      score: Number.isFinite(Number(e.aml_score)) ? Number(e.aml_score) : null,
+      label: e.label || '',
+      category: e.category || '',
+      sanctioned: e.sanctioned === true,
+      direct: Number.isFinite(Number(bd.direct_exposure)) ? Number(bd.direct_exposure) : null,
+      indirect: Number.isFinite(Number(bd.indirect_exposure)) ? Number(bd.indirect_exposure) : null,
+      sources: Array.isArray(bd.propagated_sources)
+        ? bd.propagated_sources.map((s) => ({ category: s.category || '', hops: s.hops ?? null, score: Number(s.score) || 0 }))
+        : [],
+      error: null,
+    }
+  } catch (err) {
+    return { ...empty, error: err?.name === 'AbortError' ? 'PublicAML: timeout' : err?.message || 'PublicAML: сеть/CORS' }
+  } finally {
+    clearTimeout(t)
+  }
+}

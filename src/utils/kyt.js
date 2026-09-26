@@ -79,6 +79,18 @@ export async function analyzeKyt(address, index, self, opts = {}) {
     score += 40
     add(40, 'Флаги Tronscan Security', secHits.map((m) => m.label).join('; '))
   }
+  // PublicAML entity score (same model: sanctioned / high / elevated).
+  const pam = self?.pam || null
+  if (pam?.sanctioned) {
+    score += 60
+    add(60, `PublicAML: санкции${pam.label ? ` (${pam.label})` : ''}`, 'Сущность прямо в санкциях')
+  } else if (Number.isFinite(pam?.score) && pam.score >= 70) {
+    score += 40
+    add(40, `PublicAML: высокий скор ${Math.round(pam.score)}`, pam.label || pam.category || '')
+  } else if (Number.isFinite(pam?.score) && pam.score >= 40) {
+    score += 15
+    add(15, `PublicAML: повышенный скор ${Math.round(pam.score)}`, pam.label || pam.category || '')
+  }
 
   // 1. Chain data.
   const [account, transfers] = await Promise.all([fetchTronAccount(a), fetchTronTransfers(a)])
@@ -334,6 +346,7 @@ export async function analyzeKyt(address, index, self, opts = {}) {
     level,
     depth,
     exposurePct,
+    pam: self?.pam || null,
     factors,
     stats: {
       ageDays: ageDays !== null ? Math.floor(ageDays) : null,
