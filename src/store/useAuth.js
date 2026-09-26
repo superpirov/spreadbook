@@ -11,7 +11,7 @@ import {
 } from 'firebase/auth'
 import { auth } from '../utils/firebase.js'
 import { getPlan } from '../utils/billing.js'
-import { ensureUserDoc, saveSubToCloud, resolveRefCode, createReferral, markReferralPaid } from '../utils/users.js'
+import { ensureUserDoc, saveSubToCloud, resolveRefCode, createReferral, markReferralPaid, reserveTxHash } from '../utils/users.js'
 import { consumeRefParam, peekRefParam } from '../utils/referral.js'
 import { useStore } from './useStore.js'
 
@@ -175,7 +175,7 @@ export const useAuth = create(
         set({ user: null })
       },
 
-      activatePro: async (txHash, plan = getPlan('monthly')) => {
+      activatePro: async (txHash, plan = getPlan('monthly'), txTime = null) => {
         const s = get()
         if (!s.user) return
         const id = s.user.id
@@ -194,7 +194,20 @@ export const useAuth = create(
         } catch {
           /* local cache kept; cloud sync retries on next login */
         }
-        // If this user was referred, mark their referral row as paid (best-effort).
+        // One-time TX reservation: first claimant wins (rule-enforced).
+        // On failure roll PRO back so a foreign/replayed hash can't stick.
+        try {
+          await reserveTxHash(txHash, { uid: id, planId: plan.id, amount: plan.price, txTime })
+        } catch (e) {
+          const rolled = { ...freshSub(), trialStart: cur.trialStart || new Date().toISOString() }
+          set((st) => ({ subs: { ...st.subs, [id]: rolled } }))
+          try {
+            await saveSubToCloud(id, rolled)
+          } catch {
+            /* ignore */
+          }
+          throw e
+        }
         try {
           await markReferralPaid(id, plan)
         } catch {

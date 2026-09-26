@@ -59,9 +59,10 @@ npm run deploy
 
 Модель: 3 дня триала с момента первого входа, далее PRO — 19 USDT / 30 дней или 132 USDT / 365 дней (≈11 USDT/мес).
 
-- Настройки в `src/utils/billing.js`: `BILLING.wallet` (TRC-20 адрес), `PLANS` (цены/сроки), `BILLING.trialDays`.
+- Настройки в `src/utils/billing.js`: `BILLING.wallet` (TRC-20 адрес), `PLANS` (цены/сроки), `BILLING.trialDays`, `TX_MAX_AGE_DAYS` (7).
 - Пользователь отправляет USDT (TRC-20) на кошелёк и вставляет TXID на странице `/app/billing`.
-- Проверка ончейн: `verifyUsdtPayment()` опрашивает Tronscan public API (`transaction-info`), сверяет получателя, USDT-контракт `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t`, сумму ≥ цены и подтверждение сети.
+- Проверка ончейн: `verifyUsdtPayment()` опрашивает Tronscan public API (`transaction-info`), сверяет получателя, USDT-контракт `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t`, сумму ≥ цены, подтверждение сети и давность (не старше 7 дней).
+- Анти-даблспенд: `payments/{txHash}` — первый вставивший побеждает (rule `!exists`), повторы отклоняются; при отклонении PRO откатывается. Чужой подсмотренный перевод активировать нельзя.
 - Состояние подписки (`trialStart / plan / expiresAt`) — в `useAuth`, гейт — в `CabinetLayout` (App.jsx). Просрочка закрывает разделы кабинета пейволлом, страница оплаты остаётся доступна.
 - Ограничение: enforcement клиентский (localStorage). Строгая защита — бэкенд-воркер с проверкой Trongrid (бэклог).
 
@@ -98,6 +99,12 @@ service cloud.firestore {
     // Community scam reports: anyone logged in can read/file, only admin moderates.
     match /reports/{reportId} {
       allow read, create: if request.auth != null;
+      allow update, delete: if request.auth != null && request.auth.token.email == 'pirov.ru@yandex.ru';
+    }
+    // Used payment hashes: first claimant wins (!exists), admin can clean up.
+    match /payments/{txHash} {
+      allow read: if request.auth != null && (resource.data.uid == request.auth.uid || request.auth.token.email == 'pirov.ru@yandex.ru');
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid && !exists(/databases/$(database)/documents/payments/$(txHash));
       allow update, delete: if request.auth != null && request.auth.token.email == 'pirov.ru@yandex.ru';
     }
     // Referrals: codes are public to logged-in users; referral rows visible

@@ -96,6 +96,29 @@ export async function fetchUserDeals(uid) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
 }
 
+// --- Used payment TX registry (double-spend protection) ---
+// payments/{txHash}: { uid, planId, amount, txTime, createdAt }.
+// Rules allow create ONLY if the doc does not exist yet (!exists) —
+// the first claimant wins, replays are rejected at the database level.
+
+export async function reserveTxHash(txHash, { uid, planId, amount, txTime }) {
+  const hash = String(txHash || '').trim()
+  if (!hash || !uid) throw new Error('Пустой хеш или пользователь.')
+  try {
+    await setDoc(doc(db, 'payments', hash), {
+      uid,
+      planId: planId || null,
+      amount: Number(amount) || 0,
+      txTime: txTime || null,
+      createdAt: new Date().toISOString(),
+    })
+  } catch (e) {
+    if (e?.code === 'permission-denied') {
+      throw new Error('Этот хеш уже использован для активации. Один перевод — одна активация.')
+    }
+    throw new Error('Не удалось зарегистрировать платёж. Проверьте интернет и попробуйте ещё раз.')
+  }
+}
 // --- Community scam reports (shared blacklist with admin moderation) ---
 // Collection "reports": { address, network, reason, reporter, status, createdAt }.
 // status: pending | approved | rejected. Approved entries merge into every

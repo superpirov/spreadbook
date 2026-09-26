@@ -24,6 +24,8 @@ export const PLANS = [
 export const getPlan = (id) => PLANS.find((p) => p.id === id) || PLANS[0]
 
 export const USDT_TRC20_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'
+// Payment TX must be this fresh (days). Kills reuse of ancient transfers.
+export const TX_MAX_AGE_DAYS = 7
 const DAY = 24 * 60 * 60 * 1000
 
 export function getAccessState(sub) {
@@ -68,6 +70,16 @@ export async function verifyUsdtPayment(txHash, planId = 'monthly') {
   const confirmed = j.confirmed === true || (j.confirmations ?? 0) > 0 || j.block != null
   if (!confirmed) throw new Error('Транзакция найдена, но ещё не подтверждена сетью. Подождите пару минут.')
 
+  // Recency: reject ancient transfers (limits replay of old payments).
+  const ts = Number(j.timestamp ?? j.block_timestamp ?? j.blockTimestamp)
+  let txDate = null
+  if (Number.isFinite(ts) && ts > 0) {
+    txDate = new Date(ts)
+    if (Date.now() - ts > TX_MAX_AGE_DAYS * DAY) {
+      throw new Error(`Транзакция старше ${TX_MAX_AGE_DAYS} дней — для оплаты сделайте свежий перевод.`)
+    }
+  }
+
   // Collect candidate TRC-20 transfers from all known response shapes.
   const candidates = []
   const push = (to, amountRaw, contract) => {
@@ -91,7 +103,7 @@ export async function verifyUsdtPayment(txHash, planId = 'monthly') {
       `Подходящий перевод не найден: нужен перевод ${plan.price} ${BILLING.asset} (${BILLING.network}) на адрес ${BILLING.wallet}. Проверьте сумму, токен и сеть.`,
     )
   }
-  return true
+  return { amount: Number(match.amountRaw) / 1e6, timestamp: txDate ? txDate.toISOString() : null }
 }
 
 export function tronscanUrl(hash) {

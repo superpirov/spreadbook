@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Copy, Check, Crown, Clock, ExternalLink, Loader2, ShieldCheck } from 'lucide-react'
 import { useAuth, useCurrentSub } from '../store/useAuth.js'
-import { BILLING, PLANS, getPlan, getAccessState, trialEndDate, verifyUsdtPayment, tronscanUrl } from '../utils/billing.js'
+import { BILLING, PLANS, TX_MAX_AGE_DAYS, getPlan, getAccessState, trialEndDate, verifyUsdtPayment, tronscanUrl } from '../utils/billing.js'
 import { formatDate } from '../utils/formatters.js'
 
 export function StatusBadge() {
@@ -58,8 +58,8 @@ export default function Billing({ compact = false }) {
     setChecking(true)
     setMsg(null)
     try {
-      await verifyUsdtPayment(tx, planId)
-      await activatePro(tx.trim(), plan)
+      const { timestamp } = await verifyUsdtPayment(tx, planId)
+      await activatePro(tx.trim(), plan, timestamp)
       setMsg({ ok: true, text: `Оплата подтверждена в сети Tron. ${plan.title} активирован — приятной торговли!` })
     } catch (err) {
       setMsg({ ok: false, text: err.message })
@@ -156,6 +156,9 @@ export default function Billing({ compact = false }) {
             {msg.text}
           </p>
         )}
+        <p className="mt-2 text-[11px] text-slate-500">
+          Защита от злоупотреблений: один хеш — одна активация (повторное использование отклоняется), принимаются переводы не старше {TX_MAX_AGE_DAYS} дней.
+        </p>
       </div>
     </div>
   )
