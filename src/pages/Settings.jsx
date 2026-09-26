@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { Download, Upload, Trash2, FileSpreadsheet, Cloud, CloudOff, Loader2 } from 'lucide-react'
 import { useStore } from '../store/useStore.js'
 import { useAuth } from '../store/useAuth.js'
+import { version as appVersion } from '../../package.json'
 
 function toCSV(deals) {
   const head = ['id', 'datetime', 'type', 'asset', 'fiat', 'amount', 'price', 'fee', 'platform', 'counterparty', 'notes']
@@ -91,6 +92,7 @@ export default function Settings() {
         <p className="mt-2 text-xs text-slate-500">
           Аккаунт: {user?.email || '—'} · {cloudError ? 'Показаны локальные данные. Проверьте Rules Firestore и интернет, затем обновите страницу.' : 'Все изменения на этом устройстве автоматически появляются на других.'}
         </p>
+        <p className="mt-1 text-[11px] text-slate-600">Сборка v{appVersion}</p>
       </div>
       <div className="card p-5">
         <div className="grid gap-3 sm:grid-cols-3">

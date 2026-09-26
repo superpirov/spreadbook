@@ -2,6 +2,16 @@ import { doc, getDoc, setDoc, updateDoc, collection, getDocs, addDoc, deleteDoc,
 import { db } from './firebase.js'
 import { makeRefCode } from './referral.js'
 
+// Fail Firestore ops loudly after N ms instead of hanging forever
+// (hanging requests look like "nothing happens" in UI).
+function withTimeout(promise, ms, label) {
+  let timer = null
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label}: превышено ожидание ответа`)), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+}
+
 // Firestore user registry: collection "users", doc id = Firebase uid.
 // Doc shape: { email, name, createdAt, lastSeen, trialStart, plan, planId,
 //              txHash, paidAt, expiresAt }
@@ -129,21 +139,28 @@ const reportsCol = () => collection(db, 'reports')
 export async function submitReport({ address, network, reason, reporter }) {
   const clean = String(address || '').trim()
   if (!clean) throw new Error('Пустой адрес')
-  await addDoc(reportsCol(), {
-    address: clean,
-    network: network || 'unknown',
-    reason: String(reason || '').trim().slice(0, 500),
-    reporter: reporter || '',
-    status: 'pending',
-    createdAt: new Date().toISOString(),
-  })
+  await withTimeout(
+    addDoc(reportsCol(), {
+      address: clean,
+      network: network || 'unknown',
+      reason: String(reason || '').trim().slice(0, 500),
+      reporter: reporter || '',
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    }),
+    15000,
+    'Отправка жалобы',
+  )
 }
 
 export async function fetchReports(status = 'pending') {
   // No orderBy: where+orderBy on different fields would require a composite
   // index. Sort client-side instead.
-  const q = query(reportsCol(), where('status', '==', status), limit(200))
-  const snap = await getDocs(q)
+  const snap = await withTimeout(
+    getDocs(query(reportsCol(), where('status', '==', status), limit(200))),
+    15000,
+    'Загрузка жалоб',
+  )
   return snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))

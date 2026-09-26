@@ -1,7 +1,7 @@
 {
   "name": "spreadbook",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "SpreadBook — учет P2P-сделок с криптовалютой (SPA для GitHub Pages)",
   "type": "module",
   "scripts": {
