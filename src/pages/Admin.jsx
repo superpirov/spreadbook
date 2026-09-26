@@ -109,8 +109,9 @@ export default function Admin() {
         ? await adjustDays(u.uid, u.expiresAt, delta * 7)
         : await adjustMonths(u.uid, u.expiresAt, delta)
       setUsers((list) => list.map((x) => (x.uid === u.uid ? { ...x, plan: 'pro', expiresAt: next } : x)))
-    } catch {
-      setError('Не удалось изменить подписку. Проверьте rules Firestore.')
+    } catch (e) {
+      console.error('[admin] adjust failed:', e)
+      setError(`Не удалось изменить подписку (${e?.code || 'ошибка'}). Проверьте rules Firestore.`)
     } finally {
       setBusyUid(null)
     }
@@ -122,8 +123,9 @@ export default function Admin() {
     try {
       await setBanned(u.uid, to)
       setUsers((list) => list.map((x) => (x.uid === u.uid ? { ...x, banned: to } : x)))
-    } catch {
-      setError('Не удалось изменить блокировку.')
+    } catch (e) {
+      console.error('[admin] ban failed:', e)
+      setError(`Не удалось изменить блокировку (${e?.code || 'ошибка'}). Проверьте rules Firestore.`)
     }
   }
 
