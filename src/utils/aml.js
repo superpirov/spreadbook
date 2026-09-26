@@ -369,8 +369,7 @@ export async function checkTetherFrozen(raw) {
   return { frozen: null, error: null }
 }
 
-export function explorerUrl(raw) {
-  const net = detectNetwork(raw)
+export function explorerUrl(raw) {  const net = detectNetwork(raw)
   const a = String(raw).trim()
   if (net === 'tron') return `https://tronscan.org/#/address/${a}`
   if (net === 'evm') return `https://etherscan.io/address/${a}`
@@ -487,5 +486,92 @@ export async function checkTronProfile(rawAddress) {
     error = [error, e.message || 'account/tag: сеть'].filter(Boolean).join('; ')
   }
   return { risk, tags, error }
+}
+
+// --- External KYT enrich (free, keyless): score + entity + sources ---
+// POST { addresses: [{wallet_address, chain}] }, chains TRON/ETH/BTC.
+// Neutral layer: no vendor branding in UI. Fail-soft, 20s timeout.
+// Returns { score, label, category, sanctioned, direct, indirect, direction,
+//           frozen {issuers,tokens,score}, sources[], counterparties[], error }.
+
+const EXT_CHAINS = { tron: 'TRON', evm: 'ETH', btc: 'BTC' }
+
+// Owner API key (optional, raises rate limits if the provider enforces them).
+// NOT sent: the reference shows no auth scheme, and a wrong Authorization
+// header could break working calls. Enable explicitly when needed.
+export const EXT_KYT_KEY = 'paml-u254_QKJbI0VLVIaZxGianNMQgOnikP2m0TSV'
+
+const pickAddr = (c) =>
+  c?.wallet_address || c?.address || c?.address_hash || c?.addr || ''
+
+export async function checkExtScore(rawAddress) {
+  const a = String(rawAddress || '').trim()
+  const net = detectNetwork(a)
+  const chain = EXT_CHAINS[net]
+  const empty = {
+    score: null, label: '', category: '', sanctioned: false,
+    direct: null, indirect: null, direction: '', frozen: null,
+    sources: [], counterparties: [], error: null,
+  }
+  if (!chain) return empty
+  const c = new AbortController()
+  const t = setTimeout(() => c.abort(), 20000)
+  try {
+    const res = await fetch('https://intelapi.publicaml.org/v1/enrich', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: c.signal,
+      body: JSON.stringify({
+        addresses: [{ wallet_address: a, chain }],
+        include: ['aml_score', 'category', 'counterparties', 'source_of_funds'],
+        top_n: 5,
+      }),
+    })
+    if (!res.ok) throw new Error(` enrich: HTTP ${res.status}`)
+    const j = await res.json()
+    const e = Array.isArray(j?.entities) ? j.entities[0] : null
+    if (!e) return { ...empty, error: 'Пустой ответ' }
+    const bd = e.aml_score_breakdown || {}
+    const fr = bd.frozen_direct || null
+    const cps = Array.isArray(e.counterparties)
+      ? e.counterparties
+      : Array.isArray(j?.counterparties)
+        ? j.counterparties
+        : []
+    return {
+      score: Number.isFinite(Number(e.aml_score)) ? Number(e.aml_score) : null,
+      label: e.label || '',
+      category: e.category || '',
+      sanctioned: e.sanctioned === true,
+      direct: Number.isFinite(Number(bd.direct_exposure)) ? Number(bd.direct_exposure) : null,
+      indirect: Number.isFinite(Number(bd.indirect_exposure)) ? Number(bd.indirect_exposure) : null,
+      direction: bd.exposure_direction || '',
+      frozen: fr
+        ? { issuers: fr.issuers || [], tokens: fr.tokens || [], score: Number(fr.score) || 0 }
+        : null,
+      sources: Array.isArray(bd.propagated_sources)
+        ? bd.propagated_sources.map((s) => ({
+            category: s.category || '',
+            source: s.source || '',
+            hops: s.hops ?? null,
+            score: Number(s.score) || 0,
+            direction: s.direction || '',
+          }))
+        : [],
+      counterparties: cps.slice(0, 10).map((cp) => ({
+        address: pickAddr(cp),
+        label: cp.label || cp.name || '',
+        category: cp.category || '',
+        received: cp.received ?? cp.inbound ?? cp.in_value ?? null,
+        sent: cp.sent ?? cp.outbound ?? cp.out_value ?? null,
+        txs: cp.txs ?? cp.tx_count ?? cp.transactions ?? null,
+      })),
+      error: null,
+    }
+  } catch (err) {
+    return { ...empty, error: err?.name === 'AbortError' ? 'timeout' : err?.message || 'сеть/CORS' }
+  } finally {
+    clearTimeout(t)
+  }
 }
 

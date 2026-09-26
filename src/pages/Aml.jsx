@@ -15,6 +15,7 @@ import {
   checkTetherFrozen,
   checkTronSecurity,
   checkTronProfile,
+  checkExtScore,
   getCanonical,
   getCommunityIndex,
   getStaticIndex,
@@ -236,15 +237,20 @@ export default function Aml() {
       const { risk: tronRisk, tags: tronTags } = (!canonical && base.network === 'tron')
         ? await checkTronProfile(a)
         : { risk: false, tags: [] }
+      const ext = !canonical
+        ? await checkExtScore(a)
+        : { score: null, label: '', category: '', sanctioned: false, direct: null, indirect: null, direction: '', frozen: null, sources: [], counterparties: [], error: null }
       const matches = [...base.matches, ...secFlags]
       if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
       if (tronRisk === true) matches.push({ source: 'TRONSCAN_RISK', label: 'Tronscan: risk-флаг' })
+      if (ext.sanctioned) matches.push({ source: 'EXT_SANCTION', label: `Санкции${ext.label ? ` (${ext.label})` : ''}` })
+      else if (Number.isFinite(ext.score) && ext.score >= 70) matches.push({ source: 'EXT_SCORE', label: `Внешний скор ${Math.round(ext.score)}${ext.label ? ` (${ext.label})` : ''}` })
       const verdict = matches.length > 0 ? 'bad' : base.verdict
-      const r = { address: base.address, network: base.network, verdict, matches, frozen, tags: tronTags, rpcError: rpcError || '', secError: secError || '', canonical: canonical || '', cached: false, kyt: null }
+      const r = { address: base.address, network: base.network, verdict, matches, frozen, tags: tronTags, ext, rpcError: rpcError || '', secError: secError || '', canonical: canonical || '', cached: false, kyt: null }
       if (base.network === 'tron') {
         setDeepStage('Собираю историю транзакций…')
           try {
-            r.kyt = await analyzeKyt(a, lookupIndex, { verdict, matches, frozen }, {
+            r.kyt = await analyzeKyt(a, lookupIndex, { verdict, matches, frozen, ext }, {
             depth,
             community: community.index,
             onProgress: ({ stage, done, total }) => setDeepStage(total > 1 ? `${stage} (${done}/${total})` : stage),
@@ -256,7 +262,7 @@ export default function Aml() {
         setDeepStage('')
       }
       setResult(r)
-      await logAmlCheck({ address: r.address, network: r.network, verdict: r.verdict, matches, frozen, tags: r.tags, depth: base.network === 'tron' ? depth : 0, counterparty: '', kyt: r.kyt })
+      await logAmlCheck({ address: r.address, network: r.network, verdict: r.verdict, matches, frozen, tags: r.tags, ext: r.ext, depth: base.network === 'tron' ? depth : 0, counterparty: '', kyt: r.kyt })
     } finally {
       setChecking(false)
       setDeepStage('')
@@ -300,7 +306,7 @@ export default function Aml() {
         )}
         {refreshMsg && <p className="mt-2 text-xs text-slate-300">{refreshMsg}</p>}
         <p className="mt-2 text-[11px] text-slate-500">
-          Источники: OFAC SDN (репо 0xB10C, автообновление каждую ночь), живой ончейн-статус заморозки USDT, Tronscan Security и метки сообщества. Лейблы Etherscan/Tronscan («Phishing») закрыты их API — сверяйте вручную по ссылке из результата.
+          Источники: OFAC SDN (репо 0xB10C, автообновление каждую ночь), живой ончейн-статус заморозки USDT, Tronscan Security, внешний KYT-скоринг и метки сообщества. Лейблы Etherscan/Tronscan («Phishing») закрыты их API — сверяйте вручную по ссылке из результата.
         </p>
       </div>
 
@@ -532,6 +538,8 @@ export function KytReport({ address, kyt }) {
         </div>
         <button type="button" onClick={() => window.print()} className="btn-ghost px-3 py-1.5 text-xs">Печать / PDF</button>
       </div>
+
+      <ExtBlock ext={kyt.ext} />
 
       <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
@@ -785,6 +793,80 @@ function ScoreRow({ label, value, hint }) {
       <span className="w-24 shrink-0 text-xs font-bold uppercase tracking-wide text-slate-500">{label}</span>
       <span className="w-10 shrink-0 font-mono font-extrabold text-white">{value}</span>
       <span className="min-w-0 flex-1 truncate text-xs text-slate-500">{hint}</span>
+    </div>
+  )
+}
+
+function ExtBlock({ ext }) {
+  if (!ext || (!Number.isFinite(ext.score) && !ext.sanctioned && !ext.label && !(ext.sources?.length > 0))) return null
+  return (
+    <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400">Внешний скоринг</h4>
+        {Number.isFinite(ext.score) && (
+          <span className={`font-mono text-lg font-extrabold ${ext.score >= 70 ? 'text-red-300' : ext.score >= 40 ? 'text-amber-200' : 'text-emerald-300'}`}>
+            {Math.round(ext.score)}/100
+          </span>
+        )}
+      </div>
+      {(ext.label || ext.category) && (
+        <p className="mt-1 text-sm">
+          <b>{ext.label || 'Без названия'}</b>
+          {ext.category && <span className="text-slate-400"> · {ext.category}</span>}
+          {ext.sanctioned && <span className="ml-2 rounded bg-red-500/15 px-1.5 py-0.5 text-[11px] font-bold text-red-200">санкции</span>}
+        </p>
+      )}
+      {(ext.direct !== null || ext.indirect !== null) && (ext.direct !== undefined) && (
+        <p className="mt-1 text-xs text-slate-400">
+          Прямая экспозиция: {ext.direct ?? '—'} · косвенная: {ext.indirect ?? '—'}
+          {ext.direction && ` · направление: ${ext.direction}`}
+        </p>
+      )}
+      {ext.frozen && (ext.frozen.score > 0 || (ext.frozen.issuers?.length > 0)) && (
+        <p className="mt-1 text-xs text-red-200">
+          Заморозка эмитентом: {(ext.frozen.issuers || []).join(', ') || 'да'} ({(ext.frozen.tokens || []).join(', ') || 'токены'})
+        </p>
+      )}
+      {ext.sources?.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {ext.sources.slice(0, 8).map((s, i) => (
+            <li key={i} className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-2.5 py-1.5 text-xs">
+              <span className="min-w-0 flex-1 truncate text-slate-200" title={s.source || s.category}>
+                {s.category || 'источник'}{s.source && s.source !== s.category && <span className="text-slate-500"> · {s.source}</span>}
+              </span>
+              {s.hops !== null && s.hops !== undefined && <span className="shrink-0 text-slate-500">{s.hops} хоп</span>}
+              {s.direction && <span className="shrink-0 text-slate-500">{s.direction}</span>}
+              <span className="shrink-0 font-mono font-bold text-slate-300">{s.score}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {ext.counterparties?.length > 0 && (
+        <div className="mt-2 overflow-x-auto rounded-xl border border-white/10">
+          <table className="w-full min-w-[480px] text-left font-mono text-xs">
+            <thead>
+              <tr className="text-[11px] uppercase tracking-wide text-slate-500">
+                {['Контрагент', 'Получено', 'Отправлено', 'Txs'].map((h) => (
+                  <th key={h} className="px-3 py-2 font-sans font-medium">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {ext.counterparties.slice(0, 10).map((cp, i) => (
+                <tr key={i} className="border-t border-white/5 text-slate-300">
+                  <td className="max-w-[180px] truncate px-3 py-1.5" title={cp.address || ''}>
+                    {cp.address ? shortAddr(cp.address) : '—'}
+                    {cp.label && <span className="ml-1 font-sans text-slate-500">· {cp.label}</span>}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-emerald-300">{cp.received ?? '—'}</td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-red-300">{cp.sent ?? '—'}</td>
+                  <td className="px-3 py-1.5">{cp.txs ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

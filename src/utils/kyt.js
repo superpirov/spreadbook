@@ -326,22 +326,45 @@ export async function analyzeKyt(address, index, self, opts = {}) {
     pushSrc('Поведенческие факторы', 'behavior', null, Math.min(30, behaviorPts), 'indirect')
   }
 
-  // TOTAL = the single strongest source (max, not sum).
-  // Tie-break: closer hop first, then direct edge.
+  // TOTAL: external score as the base (when available) + our sanctions bonus.
+  // Without external data — our own max-source mechanics.
+  const ext = self?.ext || null
+  const extBase = ext && Number.isFinite(ext.score) ? Math.round(ext.score) : null
   const hopRank = (s) => (s.hop === 0 || s.hop === null || s.hop === undefined ? -1 : s.hop)
   const dirRank = (s) => (s.direction === 'direct' ? 0 : 1)
   const byStrength = [...sources].sort(
     (x, y) => y.score - x.score || hopRank(x) - hopRank(y) || dirRank(x) - dirRank(y),
   )
-  const dominant = byStrength.length > 0 && byStrength[0].score > 0 ? byStrength[0] : null
-  const score = Math.min(100, Math.round(dominant ? dominant.score : 0))
-  const level = score >= 51 ? 'high' : score >= 21 ? 'medium' : 'low'
   const maxDir = (dir) => {
     const list = sources.filter((s) => s.direction === dir || s.direction === 'both')
     return list.length > 0 ? Math.max(...list.map((s) => s.score)) : 0
   }
-  const direct = maxDir('direct')
-  const inbound = maxDir('in')
+  let score
+  let dominant
+  if (extBase !== null) {
+    const selfHit = (self?.matches || []).some(
+      (m) => OFAC_IDS.has(m.source) || String(m.source || '').startsWith('SEIZURE_') || m.source === 'TETHER_FROZEN' || m.source === 'COMMUNITY',
+    )
+    const peerHit = dirtyPeers.some((d) => d.source !== 'TRONSCAN_SEC_PEER')
+    const ourBonus = selfHit ? 15 : peerHit ? 10 : 0
+    if (ourBonus > 0) {
+      add(ourBonus, `Наши находки поверх внешнего скора +${ourBonus}`, 'санкционные совпадения нашего движка')
+    }
+    score = Math.min(100, extBase + ourBonus)
+    dominant = {
+      label: ext.label || 'Внешний скоринг',
+      category: ext.category || '',
+      hop: null,
+      score: extBase,
+      direction: ext.direction || '',
+    }
+  } else {
+    dominant = byStrength.length > 0 && byStrength[0].score > 0 ? byStrength[0] : null
+    score = Math.min(100, Math.round(dominant ? dominant.score : 0))
+  }
+  const level = score >= 51 ? 'high' : score >= 21 ? 'medium' : 'low'
+  const direct = extBase !== null && ext.direct !== null && ext.direct !== undefined ? Math.round(ext.direct) : maxDir('direct')
+  const inbound = extBase !== null && ext.indirect !== null && ext.indirect !== undefined ? Math.round(ext.indirect) : maxDir('in')
   const outbound = maxDir('out')
   // Exposure: share of received USDT volume that came via sanctioned 1-hop peers.
   const dirtyUsdtIn = dirtyPeers
@@ -362,6 +385,7 @@ export async function analyzeKyt(address, index, self, opts = {}) {
     level,
     depth,
     exposurePct,
+    ext: self?.ext || null,
     funds: [
       { label: 'Санкции', pct: exposurePct },
       { label: 'Флаги', pct: flaggedPct },

@@ -12,6 +12,7 @@ import {
   checkTetherFrozen,
   checkTronSecurity,
   checkTronProfile,
+  checkExtScore,
   getCanonical,
   getCommunityIndex,
   getStaticIndex,
@@ -117,9 +118,12 @@ export default function CounterpartyList() {
         const { risk: tronRisk } = (!canonical && base.network === 'tron')
           ? await checkTronProfile(a)
           : { risk: false }
+        const ext = !canonical ? await checkExtScore(a) : { score: null, sanctioned: false }
         const matches = [...base.matches, ...secFlags]
         if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
         if (tronRisk === true) matches.push({ source: 'TRONSCAN_RISK', label: 'Tronscan: risk-флаг' })
+        if (ext.sanctioned) matches.push({ source: 'EXT_SANCTION', label: 'Санкции (внешний скоринг)' })
+        else if (Number.isFinite(ext.score) && ext.score >= 70) matches.push({ source: 'EXT_SCORE', label: `Внешний скор ${Math.round(ext.score)}` })
         const verdict = matches.length > 0 ? 'bad' : base.verdict
         out.push({ address: a, network: base.network, verdict, matches, rpcError: rpcError || '' })
         await logAmlCheck({ address: a, network: base.network, verdict, matches, frozen, counterparty: selected })
