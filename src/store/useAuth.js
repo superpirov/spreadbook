@@ -5,13 +5,14 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
+  sendEmailVerification,
   signOut,
   updateProfile,
 } from 'firebase/auth'
 import { auth } from '../utils/firebase.js'
 import { getPlan } from '../utils/billing.js'
 import { ensureUserDoc, saveSubToCloud, resolveRefCode, createReferral, markReferralPaid } from '../utils/users.js'
-import { consumeRefParam } from '../utils/referral.js'
+import { consumeRefParam, peekRefParam } from '../utils/referral.js'
 import { useStore } from './useStore.js'
 
 // Real Firebase Authentication (email/password).
@@ -117,6 +118,12 @@ export const useAuth = create(
         const cred = await createUserWithEmailAndPassword(auth, clean, password)
         const displayName = String(name || '').trim() || clean.split('@')[0]
         await updateProfile(cred.user, { displayName })
+        // Welcome email (free Firebase template, no setup needed).
+        try {
+          await sendEmailVerification(cred.user)
+        } catch {
+          /* non-blocking */
+        }
         const s = get()
         const user = { id: cred.user.uid, email: clean, name: displayName }
         set({
@@ -125,17 +132,25 @@ export const useAuth = create(
         })
         useStore.getState().bindUser(user.id)
         syncCloud(user, get, set)
-        // Referral attribution (fire-and-forget): pending ?ref= code → referral row.
+        // Referral attribution (best-effort). The code is removed from
+        // storage ONLY after the referral row is created — a failed attempt
+        // keeps the code for retry on next login.
         try {
-          const code = consumeRefParam()
+          const code = peekRefParam()
           if (code) {
             const hit = await resolveRefCode(code)
-            if (hit?.uid && hit.uid !== user.id) {
-              await createReferral({ code: hit.code, referrerUid: hit.uid, refereeUid: user.id, refereeEmail: clean })
+            if (!hit?.uid) {
+              console.warn('[spreadbook] ref code not found:', code)
+            } else if (hit.uid === user.id) {
+              consumeRefParam() // self-referral: drop silently
+            } else {
+              const rid = await createReferral({ code: hit.code, referrerUid: hit.uid, refereeUid: user.id, refereeEmail: clean })
+              if (rid) consumeRefParam()
+              else console.warn('[spreadbook] referral not created (maybe duplicate)')
             }
           }
-        } catch {
-          /* referral is best-effort */
+        } catch (e) {
+          console.warn('[spreadbook] referral attribution failed:', e?.code || e?.message)
         }
       },
 

@@ -1,6 +1,6 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ShieldAlert } from 'lucide-react'
+import { ShieldAlert, PartyPopper } from 'lucide-react'
 import { useStore } from '../store/useStore.js'
 import { useAuth, useCurrentSub } from '../store/useAuth.js'
 import { filterByPeriod } from '../utils/calculations.js'
@@ -22,6 +22,21 @@ export default function Home() {
   const watchlist = useStore((s) => s.watchlist)
   const ackWatch = useStore((s) => s.ackWatch)
   const alerts = watchlist.filter((w) => !w.ack && w.lastVerdict === 'bad')
+  const [welcomed, setWelcomed] = useState(() => {
+    try {
+      return localStorage.getItem(`spreadbook-welcomed-${user?.id || 'none'}`) === '1'
+    } catch {
+      return true
+    }
+  })
+  const dismissWelcome = () => {
+    try {
+      localStorage.setItem(`spreadbook-welcomed-${user?.id || 'none'}`, '1')
+    } catch {
+      /* ignore */
+    }
+    setWelcomed(true)
+  }
 
   const scoped = useMemo(() => filterByPeriod(deals, period), [deals, period])
 
@@ -46,6 +61,22 @@ export default function Home() {
               Понятно
             </button>
           </span>
+        </div>
+      )}
+      {!welcomed && (
+        <div className="rounded-2xl border border-brand/30 bg-gradient-to-br from-brand/15 via-ink-900 to-mint/10 p-5">
+          <h2 className="flex items-center gap-2 text-base font-extrabold">
+            <PartyPopper size={18} className="text-amber-300" /> Добро пожаловать в SpreadBook, {user?.name || 'трейдер'}!
+          </h2>
+          <p className="mt-1 text-sm text-slate-300">
+            Регистрация прошла успешно — мы отправили письмо для подтверждения почты (загляните и в спам).
+            У вас 3 дня полного доступа: записывайте сделки, смотрите аналитику, проверяйте кошельки.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link to="/app/guide" className="btn-primary px-4 py-2 text-xs">Обзор площадки</Link>
+            <Link to="/app/deals" className="btn-ghost px-4 py-2 text-xs">Первая сделка</Link>
+            <button onClick={dismissWelcome} className="px-3 py-2 text-xs text-slate-400 hover:text-white">Уже освоился</button>
+          </div>
         </div>
       )}
       {access.status === 'trial' && (

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { LogIn, UserPlus, Mail, User, Lock, Loader2, KeyRound } from 'lucide-react'
+import { LogIn, UserPlus, Mail, User, Lock, Loader2, KeyRound, Gift } from 'lucide-react'
 import { useAuth } from '../store/useAuth.js'
+import { peekRefParam } from '../utils/referral.js'
 
 const ERRORS = {
   'auth/invalid-email': 'Некорректная почта.',
@@ -34,6 +35,8 @@ export default function Login() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
+  // Pending invite code (?ref=) — also serves as a capture diagnostic.
+  const [inviteCode] = useState(() => peekRefParam())
 
   if (user) return <Navigate to={loc.state?.from || '/app'} replace />
 
@@ -100,6 +103,11 @@ export default function Login() {
             </button>
           ))}
         </div>
+        {inviteCode && mode !== 'reset' && (
+          <p className="mb-3 flex items-center gap-1.5 rounded-xl bg-mint/10 px-3 py-2 text-xs text-emerald-200">
+            <Gift size={13} /> Вы пришли по приглашению <b className="font-mono">{inviteCode}</b> — после регистрации друг увидит вас в своих рефералах.
+          </p>
+        )}
         <form onSubmit={submit}>
           <label className="label">Почта</label>
           <div className="relative">

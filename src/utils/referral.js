@@ -41,3 +41,12 @@ export function consumeRefParam() {
     return null
   }
 }
+
+// Peek without removing (for banners/diagnostics).
+export function peekRefParam() {
+  try {
+    return localStorage.getItem(PENDING_KEY) || null
+  } catch {
+    return null
+  }
+}
