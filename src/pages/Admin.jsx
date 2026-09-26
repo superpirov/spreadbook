@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ShieldAlert, Minus, Plus, ExternalLink, RefreshCw, Flag, Check, X, Trash2, Search, Banknote, Ban, ChevronDown } from 'lucide-react'
+import { ShieldAlert, Minus, Plus, ExternalLink, RefreshCw, Flag, Check, X, Trash2, Search, Banknote, Ban, ChevronDown, FileSpreadsheet } from 'lucide-react'
 import { useAuth } from '../store/useAuth.js'
 import { isAdmin } from '../utils/admin.js'
 import { fetchAllUsers, adjustMonths, adjustDays, setBanned, fetchUserDeals, fetchReports, moderateReport, deleteReport, fetchCashPayouts, markPayoutPaid } from '../utils/users.js'
@@ -18,6 +18,7 @@ export default function Admin() {
   const [busyUid, setBusyUid] = useState(null)
   const [reports, setReports] = useState([])
   const [reportsError, setReportsError] = useState('')
+  const [repFilter, setRepFilter] = useState('pending')
   const [query, setQuery] = useState('')
   const [payouts, setPayouts] = useState([])
   const [payoutsError, setPayoutsError] = useState('')
@@ -33,9 +34,9 @@ export default function Admin() {
     }
   }, [])
 
-  const loadReports = useCallback(async () => {
+  const loadReports = useCallback(async (status) => {
     try {
-      setReports(await fetchReports('pending'))
+      setReports(await fetchReports(status || 'pending'))
       setReportsError('')
     } catch (e) {
       console.error('[admin] loadReports failed:', e)
@@ -89,6 +90,39 @@ export default function Admin() {
       setReports((list) => list.filter((r) => r.id !== id))
     } catch {
       setReportsError('Не удалось удалить жалобу.')
+    }
+  }
+
+  const switchRepFilter = (status) => {
+    setRepFilter(status)
+    loadReports(status)
+  }
+
+  const download = (filename, content, mime) => {
+    const blob = new Blob([content], { type: mime })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const exportReports = (format) => {
+    const stamp = new Date().toISOString().slice(0, 10)
+    if (format === 'csv') {
+      const lines = ['Адрес;Сеть;Причина;Автор;Статус;Дата']
+      for (const r of reports) {
+        const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+        lines.push([r.address, r.network, r.reason, r.reporter, r.status, r.createdAt].map(esc).join(';'))
+      }
+      download(`spreadbook-blacklist-${repFilter}-${stamp}.csv`, '﻿' + lines.join('\n'), 'text/csv;charset=utf-8')
+    } else {
+      download(
+        `spreadbook-blacklist-${repFilter}-${stamp}.json`,
+        JSON.stringify(reports.map((r) => ({ address: r.address, network: r.network, reason: r.reason, reporter: r.reporter, status: r.status, createdAt: r.createdAt })), null, 2),
+        'application/json',
+      )
     }
   }
 
@@ -354,15 +388,46 @@ export default function Admin() {
       </p>
 
       <div className="card overflow-hidden">
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
           <h3 className="flex items-center gap-2 text-sm font-bold"><Flag size={15} /> Жалобы на адреса ({reports.length})</h3>
-          <button onClick={loadReports} className="btn-ghost px-3 py-1.5 text-xs">
-            <RefreshCw size={13} /> Обновить
-          </button>
+          <div className="flex items-center gap-1.5">
+            {[
+              ['pending', 'Новые'],
+              ['approved', 'Одобренные'],
+              ['rejected', 'Отклонённые'],
+            ].map(([v, label]) => (
+              <button
+                key={v}
+                onClick={() => switchRepFilter(v)}
+                className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${repFilter === v ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+              >
+                {label}
+              </button>
+            ))}
+            {reports.length > 0 && (
+              <>
+                <button onClick={() => exportReports('csv')} title="Скачать CSV" className="btn-ghost px-2.5 py-1.5 text-xs">
+                  <FileSpreadsheet size={13} /> CSV
+                </button>
+                <button onClick={() => exportReports('json')} title="Скачать JSON" className="btn-ghost px-2.5 py-1.5 text-xs">
+                  JSON
+                </button>
+              </>
+            )}
+            <button onClick={() => loadReports(repFilter)} className="btn-ghost px-3 py-1.5 text-xs">
+              <RefreshCw size={13} /> Обновить
+            </button>
+          </div>
         </div>
         {reportsError && <p className="px-4 py-2 text-xs text-red-300">{reportsError}</p>}
         {reports.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-slate-500">Новых жалоб нет. Одобренные метки расходятся всем пользователям при обновлении баз.</p>
+          <p className="px-4 py-8 text-center text-sm text-slate-500">
+            {repFilter === 'pending'
+              ? 'Новых жалоб нет. Одобренные метки расходятся всем пользователям при обновлении баз.'
+              : repFilter === 'approved'
+                ? 'Одобренных меток пока нет — это и есть общий чёрный список сервиса. Отсюда его можно выгрузить.'
+                : 'Отклонённых жалоб нет.'}
+          </p>
         ) : (
           <div className="divide-y divide-white/5">
             {reports.map((r) => (
