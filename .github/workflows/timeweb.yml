@@ -26,11 +26,17 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git checkout --orphan timeweb-tmp
-          git rm -rf .
+          # Clean untracked files FIRST, while .gitignore still applies
+          # (otherwise node_modules gets committed).
           git clean -fdx -e dist
+          git rm -rf .
           mv dist/* .
           rmdir dist
+          # Safety net: never commit dependency folders even if clean missed them.
+          git rm -r --cached node_modules package-lock.json 2>/dev/null || true
+          rm -rf node_modules package-lock.json
           git add -A
+          echo "Files in snapshot:"; git ls-files | head -20
           git commit -m "timeweb dist $GITHUB_SHA" || echo "no changes"
           git branch -D timeweb || true
           git branch -m timeweb
