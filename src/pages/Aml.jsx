@@ -619,7 +619,6 @@ export function KytReport({ address, kyt }) {
       ) : (
           <p className="mt-3 rounded-xl bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">Подозрительных факторов не выявлено: возраст, активность и связи в норме.</p>
         )}
-      <PamBlock pam={kyt.pam} />
       {kyt.sources?.length > 0 && (
         <div className="mt-3">
           <h4 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-slate-400">
