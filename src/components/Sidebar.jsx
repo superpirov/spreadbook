@@ -5,7 +5,7 @@ import { isAdmin } from '../utils/admin.js'
 
 const item = ({ isActive }) =>
   `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
-    isActive ? 'bg-gradient-to-r from-brand/30 to-mint/20 text-white ring-1 ring-white/10' : 'text-slate-400 hover:bg-white/5 hover:text-slate-100'
+    isActive ? 'bg-gradient-to-r from-brand/30 to-mint/20 text-slate-900 ring-1 ring-white/10 dark:text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-100'
   }`
 
 export default function Sidebar() {

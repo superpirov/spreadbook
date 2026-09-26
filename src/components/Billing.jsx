@@ -111,7 +111,7 @@ export default function Billing({ compact = false }) {
             <li className="flex gap-3">
               <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand/30 text-xs font-bold">1</span>
               <div className="flex-1">
-                <p className="text-slate-300">Отправьте ровно <b className="text-white">{plan.price} {BILLING.asset}</b> ({plan.title.toLowerCase()}) на кошелёк в сети <b className="text-white">{BILLING.network}</b>:</p>
+                <p className="text-slate-300">Отправьте ровно <b className="text-slate-900 dark:text-white">{plan.price} {BILLING.asset}</b> ({plan.title.toLowerCase()}) на кошелёк в сети <b className="text-slate-900 dark:text-white">{BILLING.network}</b>:</p>
                 <div className="mt-2 flex items-center gap-2 rounded-xl border border-white/10 bg-ink-950/70 px-3 py-2.5">
                   <code className="min-w-0 flex-1 break-all text-xs text-emerald-200">{BILLING.wallet}</code>
                   <button onClick={copyWallet} className="btn-ghost shrink-0 px-2.5 py-1.5 text-xs" title="Скопировать адрес">
@@ -124,7 +124,7 @@ export default function Billing({ compact = false }) {
             </li>
             <li className="flex gap-3">
               <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand/30 text-xs font-bold">2</span>
-              <p className="text-slate-300">Дождитесь подтверждения сети (обычно 1–3 минуты) и скопируйте <b className="text-white">TXID / хеш транзакции</b> из кошелька.</p>
+              <p className="text-slate-300">Дождитесь подтверждения сети (обычно 1–3 минуты) и скопируйте <b className="text-slate-900 dark:text-white">TXID / хеш транзакции</b> из кошелька.</p>
             </li>
             <li className="flex gap-3">
               <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand/30 text-xs font-bold">3</span>

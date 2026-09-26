@@ -134,7 +134,7 @@ export default function HeroTicker() {
               ['AML', 'скрининг адресов'],
             ].map(([v, l]) => (
               <div key={l} className="rounded-xl border border-white/10 bg-ink-950/60 px-2 py-3 backdrop-blur-sm">
-                <div className="text-base font-bold text-white">{v}</div>
+                <div className="text-base font-bold text-slate-900 dark:text-white">{v}</div>
                 <div className="text-[11px] text-slate-400">{l}</div>
               </div>
             ))}
@@ -194,7 +194,7 @@ export default function HeroTicker() {
         <div className="flex w-max animate-ticker gap-6 whitespace-nowrap px-4 py-2.5 text-xs">
           {row.map((t, i) => (
             <span key={i} className="inline-flex items-center gap-2 text-slate-300">
-              <span className="font-semibold text-white">{t.s}</span>
+              <span className="font-semibold text-slate-900 dark:text-white">{t.s}</span>
               <span>{t.p.toLocaleString('ru-RU', { maximumFractionDigits: t.dp ?? 4, minimumFractionDigits: 0 })}</span>
               <span className={t.c >= 0 ? 'text-emerald-300' : 'text-red-300'}>
                 {t.c >= 0 ? '▲' : '▼'} {Math.abs(t.c).toFixed(2)}%

@@ -124,7 +124,7 @@ function CabLink({ to, children }) {
       end={to === '/app'}
       className={({ isActive }) =>
         `whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition ${
-          isActive ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
+          isActive ? 'bg-white/10 text-slate-900 dark:text-white' : 'text-slate-300 hover:bg-white/5 hover:text-white'
         }`
       }
     >

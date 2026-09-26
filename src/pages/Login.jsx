@@ -94,7 +94,7 @@ export default function Login() {
               key={m}
               type="button"
               onClick={() => switchMode(m)}
-              className={`flex-1 rounded-lg px-3 py-1.5 transition ${mode === m ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+              className={`flex-1 rounded-lg px-3 py-1.5 transition ${mode === m ? 'bg-white/10 text-slate-900 dark:text-white' : 'text-slate-400 hover:text-slate-200'}`}
             >
               {label}
             </button>

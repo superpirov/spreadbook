@@ -159,7 +159,7 @@ export default function Guide() {
         <div className="grid gap-2 sm:grid-cols-2">
           {TIPS.map((t, i) => (
             <div key={i} className="flex items-start gap-2.5 rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 text-sm text-slate-300">
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white/10 text-white">{t.icon}</span>
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white/10 text-slate-900 dark:text-white">{t.icon}</span>
               {t.text}
             </div>
           ))}

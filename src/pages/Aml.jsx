@@ -597,7 +597,7 @@ export function ScoreCell({ h, compact = false }) {
   const bar = LEVEL_STYLE[lvl]?.bar || '#94a3b8'
   return (
     <span className={compact ? '' : 'block'}>
-      <span className="text-sm font-bold text-white">{score}%</span>
+      <span className="text-sm font-bold text-slate-900 dark:text-white">{score}%</span>
       <span className="mt-1 block h-1.5 w-20 overflow-hidden rounded-full bg-white/10">
         <span className="block h-full rounded-full" style={{ width: `${score}%`, background: bar }} />
       </span>

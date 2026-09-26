@@ -78,10 +78,10 @@ export default function DashboardCards({ deals, period, onPeriod }) {
         {cards.map((c) => (
           <div key={c.title} className={`card bg-gradient-to-br p-4 ${c.grad}`}>
             <div className="flex items-center gap-2 text-xs font-medium text-slate-400">
-              <span className="grid h-7 w-7 place-items-center rounded-lg bg-white/10 text-white">{c.icon}</span>
+              <span className="grid h-7 w-7 place-items-center rounded-lg bg-white/10 text-slate-900 dark:text-white">{c.icon}</span>
               {c.title}
             </div>
-            <div className={`mt-2 text-xl font-extrabold tracking-tight ${c.accent || 'text-white'}`}>{c.value}</div>
+            <div className={`mt-2 text-xl font-extrabold tracking-tight ${c.accent || 'text-slate-900 dark:text-white'}`}>{c.value}</div>
             <div className="mt-1 text-xs text-slate-400">{c.sub}</div>
           </div>
         ))}

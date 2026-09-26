@@ -79,7 +79,6 @@ input[type='number'] {
   color: #64748b;
 }
 
-.light .text-white,
 .light .text-slate-100,
 .light .text-slate-200 {
   color: #0f172a;
@@ -92,6 +91,30 @@ input[type='number'] {
 .light .text-slate-400,
 .light .text-slate-500 {
   color: #64748b;
+}
+
+/* Pastel accents designed for dark bg — deepen for light bg. */
+.light .text-emerald-200,
+.light .text-emerald-300 {
+  color: #047857;
+}
+
+.light .text-red-200,
+.light .text-red-300 {
+  color: #b91c1c;
+}
+
+.light .text-amber-200,
+.light .text-amber-300 {
+  color: #b45309;
+}
+
+.light .text-mint-soft {
+  color: #0f766e;
+}
+
+.light .text-brand-soft {
+  color: #3131ff;
 }
 
 .light .placeholder\:text-slate-500::placeholder {
@@ -123,6 +146,7 @@ input[type='number'] {
 .light .bg-ink-950\/60,
 .light .bg-ink-950\/70,
 .light .bg-ink-950\/85,
+.light .bg-ink-950\/90,
 .light .bg-ink-900\/70,
 .light .bg-ink-900\/80,
 .light .bg-ink-800 {
@@ -135,6 +159,7 @@ input[type='number'] {
 }
 
 .light .hover\:text-white:hover,
+.light .hover\:text-slate-100:hover,
 .light .hover\:text-slate-200:hover,
 .light .hover\:text-slate-300:hover {
   color: #0f172a;

@@ -301,7 +301,7 @@ export default function DealForm({ initial = null, onDone = null }) {
           </span>
         )}
         <div className="text-sm text-slate-400">
-          Итого: <span className="font-bold text-white">{dealFiatTotal({ amount: qty, price }).toLocaleString('ru-RU')} {form.fiat}</span>
+          Итого: <span className="font-bold text-slate-900 dark:text-white">{dealFiatTotal({ amount: qty, price }).toLocaleString('ru-RU')} {form.fiat}</span>
           {fee > 0 && <span className="text-slate-500"> + комиссия {fee.toLocaleString('ru-RU')}</span>}
         </div>
       </div>
