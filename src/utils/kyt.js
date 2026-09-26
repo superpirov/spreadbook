@@ -57,39 +57,29 @@ export async function analyzeKyt(address, index, self, opts = {}) {
     if (points > 0) factors.push({ points, label, detail })
   }
 
-  // 0. Self signals from the quick engine (already computed).
-  let score = 0
-  if (self?.frozen === true) {
-    score += 60
-    add(60, 'Адрес заморожен Tether', 'Переводы USDT заблокированы эмитентом')
+  // 0. Self signals from the quick engine -> risk sources (max mechanics).
+  const sources = []
+  const pushSrc = (label, category, hop, score, direction) => {
+    if (score > 0) sources.push({ label, category, hop, score: Math.round(score), direction })
   }
-  for (const m of self?.matches || []) {
-    if (m.source === 'TETHER_FROZEN') continue // counted above
-    if (m.source === 'TRONSCAN_RISK') continue // weak flag, counted below
-    score += 60
-    add(60, `Адрес в санкциях: ${m.label}`, 'Прямое совпадение с OFAC SDN')
-    break
+  const OFAC_IDS = new Set(['TRX', 'ETH', 'USDT', 'USDC', 'BSC', 'XBT', 'LTC', 'SOL'])
+  if (self?.frozen === true) {
+    pushSrc('Заморозка Tether', 'freeze', 0, 90, 'direct')
+  }
+  const selfSanction = (self?.matches || []).find((m) => OFAC_IDS.has(m.source) || String(m.source || '').startsWith('SEIZURE_'))
+  if (selfSanction) {
+    pushSrc(`Прямое совпадение: ${selfSanction.label}`, 'sanction', 0, 100, 'direct')
+  }
+  const selfSec = (self?.matches || []).filter((m) => m.source === 'TRONSCAN_SEC')
+  if (selfSec.length > 0) {
+    pushSrc('Флаги Tronscan Security', 'fraud', 0, 70, 'direct')
   }
   if ((self?.matches || []).some((m) => m.source === 'TRONSCAN_RISK')) {
-    score += 15
-    add(15, 'Tronscan: risk-флаг', 'Слабый сигнал — учитывается с малым весом')
+    pushSrc('Tronscan: risk-флаг', 'risk', 0, 40, 'direct')
   }
-  const secHits = (self?.matches || []).filter((m) => m.source === 'TRONSCAN_SEC')
-  if (secHits.length > 0) {
-    score += 40
-    add(40, 'Флаги Tronscan Security', secHits.map((m) => m.label).join('; '))
-  }
-  // PublicAML entity score (same model: sanctioned / high / elevated).
-  const pam = self?.pam || null
-  if (pam?.sanctioned) {
-    score += 60
-    add(60, `PublicAML: санкции${pam.label ? ` (${pam.label})` : ''}`, 'Сущность прямо в санкциях')
-  } else if (Number.isFinite(pam?.score) && pam.score >= 70) {
-    score += 40
-    add(40, `PublicAML: высокий скор ${Math.round(pam.score)}`, pam.label || pam.category || '')
-  } else if (Number.isFinite(pam?.score) && pam.score >= 40) {
-    score += 15
-    add(15, `PublicAML: повышенный скор ${Math.round(pam.score)}`, pam.label || pam.category || '')
+  const selfComm = (self?.matches || []).filter((m) => m.source === 'COMMUNITY')
+  if (selfComm.length > 0) {
+    pushSrc('Жалобы сообщества', 'scam', 0, 70, 'direct')
   }
 
   // 1. Chain data.
@@ -220,7 +210,6 @@ export async function analyzeKyt(address, index, self, opts = {}) {
   const depth = Math.min(5, Math.max(1, opts.depth || 1))
   const onProgress = opts.onProgress || (() => {})
   const CAPS = { 2: 20, 3: 20, 4: 12, 5: 8 } // per-level address budget (quota + time)
-  const HOP_PTS = { 1: [25, 50], 2: [10, 30], 3: [5, 15], 4: [3, 10], 5: [2, 5] } // [per-hit, cap]
   const CONC = 4
   const pool = async (items, fn) => {
     let i = 0
@@ -282,73 +271,87 @@ export async function analyzeKyt(address, index, self, opts = {}) {
     await pool(topForSec, secFn)
   }
 
-  const HOP_NAMES = { 1: 'Прямые связи', 2: 'Связи 2-го хопа', 3: 'Связи 3-го хопа', 4: 'Связи 4-го хопа', 5: 'Связи 5-го хопа' }
-  for (let hop = 1; hop <= 5; hop++) {
-    const list = dirtyPeers.filter((d) => d.hop === hop && d.source !== 'TRONSCAN_SEC_PEER')
-    if (list.length === 0) continue
-    const [per, cap] = HOP_PTS[hop]
-    const pts = Math.min(cap, list.length * per)
-    score += pts
-    add(pts, `${HOP_NAMES[hop]} с санкционными адресами: ${list.length}`, `OFAC SDN, вес падает с глубиной (+${per})`)
+  // Peer findings -> scored sources with hop decay (sanctions floor at 25).
+  const dirOf = (address) => {
+    const st = peers.get(address)
+    if (!st) return 'indirect'
+    if (st.inN > 0 && st.outN > 0) return 'both'
+    if (st.inN > 0) return 'in'
+    if (st.outN > 0) return 'out'
+    return 'indirect'
   }
-  const secPeers = dirtyPeers.filter((d) => d.source === 'TRONSCAN_SEC_PEER')
-  if (secPeers.length > 0) {
-    const pts = Math.min(30, secPeers.length * 15)
-    score += pts
-    add(pts, `Флаги Tronscan у прямых контрагентов: ${secPeers.length}`, secPeers.map((d) => d.label).slice(0, 3).join('; '))
+  const peerScore = (d) => {
+    if (d.source === 'TRONSCAN_SEC_PEER') return 50
+    if (d.source === 'COMMUNITY') return Math.max(15, Math.round(70 / d.hop))
+    return Math.max(25, Math.round(100 / d.hop)) // OFAC / seizures
+  }
+  const peerCat = (d) => (d.source === 'COMMUNITY' ? 'scam' : d.source === 'TRONSCAN_SEC_PEER' ? 'fraud' : 'sanction')
+  for (const d of dirtyPeers) {
+    pushSrc(d.label, peerCat(d), d.hop, peerScore(d), dirOf(d.address))
+  }
+
+  // Behavior -> display factors + one capped source (context, not driver).
+  let behaviorPts = 0
+  const bAdd = (p, l, d = '') => {
+    behaviorPts += p
+    add(p, l, d)
   }
 
   if (fakeContracts.size > 0) {
-    score += 40
-    add(40, `Поддельный USDT: переводы с левых контрактов (${fakeContracts.size})`, [...fakeContracts].slice(0, 2).join(', '))
+    pushSrc(`Поддельный USDT: левые контракты (${fakeContracts.size})`, 'counterfeit', 0, 85, 'direct')
+    add(85, `Поддельный USDT: переводы с левых контрактов (${fakeContracts.size})`, [...fakeContracts].slice(0, 2).join(', '))
   }
   if (dustIn >= 3) {
-    score += 8
-    add(8, `Пылевые входящие: ${dustIn}`, 'Переводы <1 USDT — признак dust-атак и спама')
+    bAdd(8, `Пылевые входящие: ${dustIn}`, 'Переводы <1 USDT — признак dust-атак и спама')
   }
 
   // 3. Behavioral heuristics.
   if (ageDays !== null && ageDays < 3) {
-    score += 15
-    add(15, 'Кошелёк младше 3 дней', 'Свежие кошельки — классика дропов и скамов')
+    bAdd(15, 'Кошелёк младше 3 дней', 'Свежие кошельки — классика дропов и скамов')
   } else if (ageDays !== null && ageDays < 30) {
-    score += 8
-    add(8, 'Кошелёк младше 30 дней', '')
+    bAdd(8, 'Кошелёк младше 30 дней', '')
   } else if (ageDays === null && txTotal === 0) {
-    score += 12
-    add(12, 'Нет истории', 'Адрес не активирован или пуст — уверенности мало')
+    bAdd(12, 'Нет истории', 'Адрес не активирован или пуст — уверенности мало')
   }
   if (txTotal > 0 && txTotal < 5) {
-    score += 8
-    add(8, 'Тонкая история (меньше 5 операций)', '')
+    bAdd(8, 'Тонкая история (меньше 5 операций)', '')
   }
   if (lifespanH !== null && lifespanH < 24 && txTotal >= 6) {
-    score += 10
-    add(10, 'Высокая скорость: много операций за сутки', `${txTotal} оп. за ${lifespanH.toFixed(1)} ч`)
+    bAdd(10, 'Высокая скорость: много операций за сутки', `${txTotal} оп. за ${lifespanH.toFixed(1)} ч`)
   }
   if (usdtIn > 0 && usdtOut / usdtIn > 0.9 && txTotal >= 4 && (lifespanH ?? 999) < 72) {
-    score += 15
-    add(15, 'Транзит: почти всё полученное ушло дальше', `Вышло ${Math.round((usdtOut / usdtIn) * 100)}% от вошедшего USDT`)
+    bAdd(15, 'Транзит: почти всё полученное ушло дальше', `Вышло ${Math.round((usdtOut / usdtIn) * 100)}% от вошедшего USDT`)
+  }
+  if (behaviorPts > 0) {
+    pushSrc('Поведенческие факторы', 'behavior', null, Math.min(30, behaviorPts), 'indirect')
   }
 
-  // Consensus with PublicAML: our total never goes below their score.
-  // Their DB (625M+ addresses, full graph) sees more than our lists —
-  // anchoring removes systematic underestimation, our own findings still win via max().
-  if (Number.isFinite(pam?.score)) {
-    const anchor = Math.round(pam.score)
-    if (anchor > score) {
-      add(anchor - score, `Консенсус с PublicAML: их скор ${anchor}`, pam.label || pam.category || '')
-      score = anchor
-    }
-  }
-
-  score = Math.min(100, Math.round(score))
+  // TOTAL = the single strongest source (max, not sum).
+  // Tie-break: closer hop first, then direct edge.
+  const hopRank = (s) => (s.hop === 0 || s.hop === null || s.hop === undefined ? -1 : s.hop)
+  const dirRank = (s) => (s.direction === 'direct' ? 0 : 1)
+  const byStrength = [...sources].sort(
+    (x, y) => y.score - x.score || hopRank(x) - hopRank(y) || dirRank(x) - dirRank(y),
+  )
+  const dominant = byStrength.length > 0 && byStrength[0].score > 0 ? byStrength[0] : null
+  const score = Math.min(100, Math.round(dominant ? dominant.score : 0))
   const level = score >= 51 ? 'high' : score >= 21 ? 'medium' : 'low'
+  const maxDir = (dir) => {
+    const list = sources.filter((s) => s.direction === dir || s.direction === 'both')
+    return list.length > 0 ? Math.max(...list.map((s) => s.score)) : 0
+  }
+  const direct = maxDir('direct')
+  const inbound = maxDir('in')
+  const outbound = maxDir('out')
   // Exposure: share of received USDT volume that came via sanctioned 1-hop peers.
   const dirtyUsdtIn = dirtyPeers
     .filter((d) => d.hop === 1 && d.source !== 'TRONSCAN_SEC_PEER')
     .reduce((s, d) => s + (peers.get(d.address)?.usdtIn || 0), 0)
+  const flaggedUsdtIn = dirtyPeers
+    .filter((d) => d.hop === 1 && (d.source === 'COMMUNITY' || d.source === 'TRONSCAN_SEC_PEER'))
+    .reduce((s, d) => s + (peers.get(d.address)?.usdtIn || 0), 0)
   const exposurePct = usdtIn > 0 ? Math.round((dirtyUsdtIn / usdtIn) * 10000) / 100 : 0
+  const flaggedPct = usdtIn > 0 ? Math.round((flaggedUsdtIn / usdtIn) * 10000) / 100 : 0
   const topPeers = [...peers.entries()]
     .map(([address, st]) => ({ address, ...st, dirty: dirtyPeers.some((d) => d.address === address), canonical: getCanonical(address) }))
     .sort((x, y) => y.txs - x.txs)
@@ -359,7 +362,16 @@ export async function analyzeKyt(address, index, self, opts = {}) {
     level,
     depth,
     exposurePct,
-    pam: self?.pam || null,
+    funds: [
+      { label: 'Санкции', pct: exposurePct },
+      { label: 'Флаги', pct: flaggedPct },
+      { label: 'Остальное', pct: Math.max(0, Math.round((100 - exposurePct - flaggedPct) * 100) / 100) },
+    ],
+    sources: byStrength,
+    dominant,
+    direct,
+    inbound,
+    outbound,
     factors,
     stats: {
       ageDays: ageDays !== null ? Math.floor(ageDays) : null,

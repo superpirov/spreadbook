@@ -15,7 +15,6 @@ import {
   checkTetherFrozen,
   checkTronSecurity,
   checkTronProfile,
-  checkPublicAML,
   getCanonical,
   getCommunityIndex,
   getStaticIndex,
@@ -237,20 +236,15 @@ export default function Aml() {
       const { risk: tronRisk, tags: tronTags } = (!canonical && base.network === 'tron')
         ? await checkTronProfile(a)
         : { risk: false, tags: [] }
-      const pam = !canonical
-        ? await checkPublicAML(a)
-        : { score: null, label: '', category: '', sanctioned: false, direct: null, indirect: null, sources: [], error: null }
       const matches = [...base.matches, ...secFlags]
       if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
       if (tronRisk === true) matches.push({ source: 'TRONSCAN_RISK', label: 'Tronscan: risk-флаг' })
-      if (pam.sanctioned) matches.push({ source: 'PUBLICAML_SANCTION', label: `PublicAML: санкции${pam.label ? ` (${pam.label})` : ''}` })
-      else if (Number.isFinite(pam.score) && pam.score >= 70) matches.push({ source: 'PUBLICAML_SCORE', label: `PublicAML: скор ${Math.round(pam.score)}${pam.label ? ` (${pam.label})` : ''}` })
       const verdict = matches.length > 0 ? 'bad' : base.verdict
-      const r = { address: base.address, network: base.network, verdict, matches, frozen, tags: tronTags, pam, rpcError: rpcError || '', secError: secError || '', canonical: canonical || '', cached: false, kyt: null }
+      const r = { address: base.address, network: base.network, verdict, matches, frozen, tags: tronTags, rpcError: rpcError || '', secError: secError || '', canonical: canonical || '', cached: false, kyt: null }
       if (base.network === 'tron') {
         setDeepStage('Собираю историю транзакций…')
           try {
-            r.kyt = await analyzeKyt(a, lookupIndex, { verdict, matches, frozen, pam }, {
+            r.kyt = await analyzeKyt(a, lookupIndex, { verdict, matches, frozen }, {
             depth,
             community: community.index,
             onProgress: ({ stage, done, total }) => setDeepStage(total > 1 ? `${stage} (${done}/${total})` : stage),
@@ -354,9 +348,6 @@ export default function Aml() {
           </p>
         )}
         {result && <VerdictCard r={result} />}
-        {result?.pam && (result.pam.score !== null || result.pam.sanctioned || result.pam.label) && (
-          <PamBlock pam={result.pam} />
-        )}
         {result && !result.kyt && result.network !== 'tron' && result.verdict !== 'unknown' && (
           <p className="mt-2 text-xs text-slate-500">Детальный разбор с графом связей доступен только для TRON — для остальных сетей показан скрининг по спискам и фризам.</p>
         )}
@@ -496,44 +487,17 @@ export default function Aml() {
   )
 }
 
-export function PamBlock({ pam }) {
-  if (!pam || (!Number.isFinite(pam.score) && !pam.sanctioned && !pam.label)) return null
-  return (
-    <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400">PublicAML · сущность и источники</h4>
-        {Number.isFinite(pam.score) && (
-          <span className={`font-mono text-sm font-extrabold ${pam.score >= 70 ? 'text-red-300' : pam.score >= 40 ? 'text-amber-200' : 'text-emerald-300'}`}>
-            {Math.round(pam.score)}/100
-          </span>
-        )}
-      </div>
-      {(pam.label || pam.category) && (
-        <p className="mt-1 text-sm">
-          <b>{pam.label || 'Без названия'}</b>
-          {pam.category && <span className="text-slate-400"> · {pam.category}</span>}
-          {pam.sanctioned && <span className="ml-2 rounded bg-red-500/15 px-1.5 py-0.5 text-[11px] font-bold text-red-200">санкции</span>}
-        </p>
-      )}
-      {(pam.direct !== null || pam.indirect !== null) && pam.direct !== undefined && (
-        <p className="mt-1 text-xs text-slate-400">
-          Прямая экспозиция: {pam.direct ?? '—'} · косвенная: {pam.indirect ?? '—'}
-        </p>
-      )}
-      {pam.sources?.length > 0 && (
-        <ul className="mt-2 space-y-1">
-          {pam.sources.slice(0, 6).map((s, i) => (
-            <li key={i} className="flex items-center gap-2 rounded-lg bg-white/[0.04] px-2.5 py-1.5 text-xs">
-              <span className="min-w-0 flex-1 truncate text-slate-200">{s.category || 'источник'}</span>
-              {s.hops !== null && s.hops !== undefined && <span className="shrink-0 text-slate-500">{s.hops} хоп</span>}
-              <span className="shrink-0 font-mono font-bold text-slate-300">{s.score}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
+const CAT_RU = {
+  sanction: 'санкции',
+  freeze: 'фриз',
+  fraud: 'фрод',
+  scam: 'скам',
+  risk: 'риск',
+  counterfeit: 'подделка',
+  behavior: 'поведение',
 }
+
+const HOP_RU = (hop) => (hop === 0 ? 'сам адрес' : hop === null || hop === undefined ? '—' : `${hop} хоп`)
 
 export function KytReport({ address, kyt }) {
   const lvl = KYT_LEVEL[kyt.level] || KYT_LEVEL.low
@@ -568,6 +532,81 @@ export function KytReport({ address, kyt }) {
         </div>
         <button type="button" onClick={() => window.print()} className="btn-ghost px-3 py-1.5 text-xs">Печать / PDF</button>
       </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Прямой риск</div>
+          <div className="mt-1 text-2xl font-extrabold">{kyt.direct ?? 0}</div>
+          <div className="text-[11px] text-slate-500">риск seed на самом адресе</div>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Доминантный источник</div>
+          <div className="mt-1 truncate text-sm font-bold" title={kyt.dominant?.label || ''}>
+            {kyt.dominant ? shortAddr(kyt.dominant.label) : '—'}
+          </div>
+          <div className="text-[11px] text-slate-500">
+            {kyt.dominant ? `${HOP_RU(kyt.dominant.hop)} · скор ${kyt.dominant.score}` : 'источников нет'}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Входящий / исходящий</div>
+          <div className="mt-1 text-2xl font-extrabold">{kyt.inbound ?? 0} <span className="text-sm text-slate-500">/ {kyt.outbound ?? 0}</span></div>
+          <div className="text-[11px] text-slate-500">макс. по связям</div>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Источников</div>
+          <div className="mt-1 text-2xl font-extrabold">{kyt.sources?.length || 0}</div>
+          <div className="text-[11px] text-slate-500">глубина: {kyt.depth || 1} хоп{(kyt.depth || 1) === 1 ? '' : 'а'}</div>
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+        <h4 className="text-sm font-bold">Как сложился скор <span className="text-slate-500">· direct {kyt.direct ?? 0} + inbound {kyt.inbound ?? 0}</span></h4>
+        <div className="relative mt-3 h-4 overflow-hidden rounded-full bg-white/10">
+          <div className="absolute inset-0 bg-gradient-to-r from-emerald-500 via-amber-400 to-red-500 opacity-70" />
+          <div
+            className="absolute top-[-2px] h-[20px] w-[3px] rounded bg-white shadow"
+            style={{ left: `calc(${Math.min(100, Math.max(0, kyt.score))}% - 1px)` }}
+            title={`Скор ${kyt.score}`}
+          />
+        </div>
+        <div className="mt-1 flex justify-between text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <span>Low</span><span>Medium</span><span>High</span>
+        </div>
+        <div className="mt-2 space-y-1 text-sm">
+          <ScoreRow label="DIRECT" value={kyt.direct ?? 0} hint="риск seed на самом адресе" />
+          <ScoreRow label="INBOUND" value={kyt.inbound ?? 0} hint="сильнейший источник среди входящих" />
+          <ScoreRow label="OUTBOUND" value={kyt.outbound ?? 0} hint="сильнейший источник среди исходящих" />
+        </div>
+        <p className="mt-2 text-[11px] text-slate-500">
+          Итог — сильнейший источник, а не сумма: складывать их было бы неверно, остальные — контекст.
+        </p>
+      </div>
+
+      {kyt.funds?.length > 0 && (
+        <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <h4 className="text-sm font-bold">Откуда деньги</h4>
+          <p className="text-xs text-slate-500">Доля входящего объёма USDT по категориям — не скор, с ним не сравнивать.</p>
+          <div className="mt-2 flex h-3 overflow-hidden rounded-full bg-white/10">
+            {(kyt.funds || []).map((f, i) => (
+              <div
+                key={i}
+                style={{ width: `${f.pct}%` }}
+                title={`${f.label}: ${f.pct}%`}
+                className={i === 0 ? 'bg-red-500/80' : i === 1 ? 'bg-amber-400/80' : 'bg-slate-500/60'}
+              />
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-3 text-xs">
+            {(kyt.funds || []).map((f, i) => (
+              <span key={i} className="text-slate-300">
+                <span className={`mr-1 inline-block h-2 w-2 rounded-sm ${i === 0 ? 'bg-red-500' : i === 1 ? 'bg-amber-400' : 'bg-slate-500'}`} />
+                {f.label} <b>{f.pct}%</b>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       {kyt.factors.length > 0 ? (
         <ul className="mt-3 space-y-1.5">
           {kyt.factors.map((f, i) => (
@@ -581,41 +620,75 @@ export function KytReport({ address, kyt }) {
           <p className="mt-3 rounded-xl bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">Подозрительных факторов не выявлено: возраст, активность и связи в норме.</p>
         )}
       <PamBlock pam={kyt.pam} />
-      {kyt.dirtyPeers.length > 0 && (
+      {kyt.sources?.length > 0 && (
         <div className="mt-3">
-          <h4 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-red-300">
-            Санкционные связи ({kyt.dirtyPeers.length}) · глубина: {kyt.depth || 1} хоп{(kyt.depth || 1) === 1 ? '' : 'а'}
-          </h4>          <div className="space-y-1">
-            {[1, 2, 3, 4, 5].map((hop) =>
-              kyt.dirtyPeers
-                .filter((p) => (p.hop || 1) === hop)
-                .map((p) => (
-                  <div key={p.address} className="flex items-center gap-2 rounded-xl bg-red-500/10 px-3 py-1.5 font-mono text-xs">
-                    <span className="shrink-0 rounded bg-red-500/20 px-1.5 py-0.5 font-sans text-[10px] font-bold text-red-200">{hop} хоп</span>
-                    <span className="min-w-0 flex-1 truncate" title={p.address}>{p.address}</span>
-                    <span className="hidden shrink-0 font-sans text-red-200 sm:block">{p.label}</span>
-                  </div>
-                )),
-            )}
+          <h4 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-slate-400">
+            Источники риска ({kyt.sources.length})
+          </h4>
+          <div className="overflow-x-auto rounded-xl border border-white/10">
+            <table className="w-full min-w-[520px] text-left text-xs">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wide text-slate-500">
+                  {['Роль', 'Класс', 'Источник', 'Хоп', 'Скор'].map((h) => (
+                    <th key={h} className="px-3 py-2 font-medium">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {kyt.sources.map((s, i) => {
+                  const drives = kyt.dominant && s.label === kyt.dominant.label && s.score === kyt.dominant.score
+                  return (
+                    <tr key={i} className="border-t border-white/5">
+                      <td className="whitespace-nowrap px-3 py-2">
+                        {drives ? <span className="font-bold text-white">ведущий</span> : <span className="text-slate-500">контекст</span>}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        <span className={`rounded-md px-2 py-0.5 font-bold ${s.score >= 51 ? 'bg-red-500/15 text-red-200' : s.score >= 21 ? 'bg-amber-400/15 text-amber-200' : 'bg-white/5 text-slate-300'}`}>
+                          {CAT_RU[s.category] || s.category}
+                        </span>
+                      </td>
+                      <td className="max-w-[220px] truncate px-3 py-2 text-slate-200" title={s.label}>{s.label}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-slate-400">{HOP_RU(s.hop)}</td>
+                      <td className="px-3 py-2 font-mono font-bold text-white">{s.score}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
       {kyt.topPeers.length > 0 && (
         <div className="mt-3">
-          <h4 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-slate-400">Топ контрагентов</h4>
-          <div className="space-y-1">
-            {kyt.topPeers.map((p) => (
-              <div key={p.address} className="flex items-center gap-2 rounded-xl bg-white/[0.04] px-3 py-1.5 font-mono text-xs text-slate-300">
-                <span className="min-w-0 flex-1 truncate" title={p.address}>{p.address}</span>
-                <span className="shrink-0">{p.txs} оп.</span>
-                {p.canonical && <span className="shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 font-sans text-[10px] font-bold text-emerald-200" title={p.canonical}>контракт</span>}
-                {p.dirty && <span className="shrink-0 font-bold text-red-300">санкции</span>}
-              </div>
-            ))}
+          <h4 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-slate-400">Контрагенты ({kyt.topPeers.length})</h4>
+          <div className="overflow-x-auto rounded-xl border border-white/10">
+            <table className="w-full min-w-[560px] text-left font-mono text-xs">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wide text-slate-500">
+                  {['Адрес', 'Метка', 'Получено', 'Отправлено', 'Txs', 'Флаг'].map((h) => (
+                    <th key={h} className="px-3 py-2 font-sans font-medium">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {kyt.topPeers.map((p) => (
+                  <tr key={p.address} className="border-t border-white/5 text-slate-300">
+                    <td className="max-w-[170px] truncate px-3 py-2" title={p.address}>{shortAddr(p.address)}</td>
+                    <td className="px-3 py-2 font-sans">
+                      {p.canonical ? <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-200" title={p.canonical}>контракт</span> : <span className="text-slate-600">—</span>}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-emerald-300">{p.usdtIn > 0 ? `${p.usdtIn.toLocaleString('ru-RU')} USDT` : `${p.inN || 0} оп.`}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-red-300">{p.usdtOut > 0 ? `${p.usdtOut.toLocaleString('ru-RU')} USDT` : `${p.outN || 0} оп.`}</td>
+                    <td className="px-3 py-2">{p.txs}</td>
+                    <td className="whitespace-nowrap px-3 py-2 font-sans">{p.dirty ? <span className="font-bold text-red-300">санкции</span> : <span className="text-slate-600">—</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
-      <p className="mt-2 text-[11px] text-slate-500">Риск-анализ: прямые и дальние связи + поведение. Полный графовый анализ — в следующих версиях.</p>
+      <p className="mt-2 text-[11px] text-slate-500">Толщина связи — скор, а не сумма. Итог берёт сильнейший источник; остальные — контекст, складывать их было бы неверно.</p>
     </div>
   )
 }
@@ -703,6 +776,16 @@ function HistoryRowDesktop({ h, copied, onCopy, onOpen }) {
           <Search size={14} />
         </button>
       </span>
+    </div>
+  )
+}
+
+function ScoreRow({ label, value, hint }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-24 shrink-0 text-xs font-bold uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="w-10 shrink-0 font-mono font-extrabold text-white">{value}</span>
+      <span className="min-w-0 flex-1 truncate text-xs text-slate-500">{hint}</span>
     </div>
   )
 }

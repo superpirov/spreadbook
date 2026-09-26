@@ -12,7 +12,6 @@ import {
   checkTetherFrozen,
   checkTronSecurity,
   checkTronProfile,
-  checkPublicAML,
   getCanonical,
   getCommunityIndex,
   getStaticIndex,
@@ -118,15 +117,12 @@ export default function CounterpartyList() {
         const { risk: tronRisk } = (!canonical && base.network === 'tron')
           ? await checkTronProfile(a)
           : { risk: false }
-        const pam = !canonical ? await checkPublicAML(a) : { score: null, sanctioned: false }
         const matches = [...base.matches, ...secFlags]
         if (frozen === true) matches.push({ source: 'TETHER_FROZEN', label: 'Tether freeze (USDT)' })
         if (tronRisk === true) matches.push({ source: 'TRONSCAN_RISK', label: 'Tronscan: risk-флаг' })
-        if (pam.sanctioned) matches.push({ source: 'PUBLICAML_SANCTION', label: `PublicAML: санкции${pam.label ? ` (${pam.label})` : ''}` })
-        else if (Number.isFinite(pam.score) && pam.score >= 70) matches.push({ source: 'PUBLICAML_SCORE', label: `PublicAML: скор ${Math.round(pam.score)}` })
         const verdict = matches.length > 0 ? 'bad' : base.verdict
-        out.push({ address: a, network: base.network, verdict, matches, rpcError: rpcError || '', canonical: canonical || '' })
-        await logAmlCheck({ address: a, network: base.network, verdict, matches, frozen, pam: { score: pam.score ?? null, label: pam.label || '', category: pam.category || '', sanctioned: !!pam.sanctioned, direct: pam.direct ?? null, indirect: pam.indirect ?? null, sources: pam.sources || [] }, counterparty: selected })
+        out.push({ address: a, network: base.network, verdict, matches, rpcError: rpcError || '' })
+        await logAmlCheck({ address: a, network: base.network, verdict, matches, frozen, counterparty: selected })
       }
       // Keep original address order (cached results were prepended out of order).
       out.sort((x, y) => addrs.indexOf(x.address) - addrs.indexOf(y.address))
