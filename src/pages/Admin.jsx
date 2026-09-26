@@ -37,8 +37,9 @@ export default function Admin() {
     try {
       setReports(await fetchReports('pending'))
       setReportsError('')
-    } catch {
-      setReportsError('Жалобы не загрузились — проверьте rules для коллекции reports.')
+    } catch (e) {
+      console.error('[admin] loadReports failed:', e)
+      setReportsError(`Жалобы не загрузились (${e?.code || 'ошибка'}) — проверьте rules для коллекции reports.`)
     }
   }, [])
 
@@ -105,9 +106,11 @@ export default function Admin() {
   const adjust = async (u, delta, unit = 'month') => {
     setBusyUid(u.uid)
     try {
-      const next = unit === 'week'
-        ? await adjustDays(u.uid, u.expiresAt, delta * 7)
-        : await adjustMonths(u.uid, u.expiresAt, delta)
+      const next = unit === 'day'
+        ? await adjustDays(u.uid, u.expiresAt, delta)
+        : unit === 'week'
+          ? await adjustDays(u.uid, u.expiresAt, delta * 7)
+          : await adjustMonths(u.uid, u.expiresAt, delta)
       setUsers((list) => list.map((x) => (x.uid === u.uid ? { ...x, plan: 'pro', expiresAt: next } : x)))
     } catch (e) {
       console.error('[admin] adjust failed:', e)
@@ -274,8 +277,11 @@ export default function Admin() {
                         <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1, 'week')} title="Добавить 1 неделю бесплатно" className="rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50">
                           +1 нед
                         </button>
-                        <button disabled={busyUid === u.uid} onClick={() => adjust(u, 12)} title="Добавить 12 месяцев бесплатно" className="rounded-lg bg-amber-400/15 px-2.5 py-1.5 text-xs font-bold text-amber-200 hover:bg-amber-400/25 disabled:opacity-50">
-                          <Plus size={13} /> 12 мес
+                        <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1, 'day')} title="Убрать 1 день" className="rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-bold text-red-200 hover:bg-red-500/25 disabled:opacity-50">
+                          −1 дн
+                        </button>
+                        <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1, 'day')} title="Добавить 1 день бесплатно" className="rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50">
+                          +1 дн
                         </button>
                         <button onClick={() => ban(u)} title={u.banned ? 'Разблокировать' : 'Заблокировать'} className={`rounded-lg px-2.5 py-1.5 text-xs font-bold ${u.banned ? 'bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25' : 'bg-white/5 text-slate-300 hover:bg-red-500/20 hover:text-red-200'}`}>
                           {u.banned ? 'Разбанить' : 'Бан'}
@@ -332,6 +338,8 @@ export default function Admin() {
                   <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1)} className="rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-xs font-bold text-emerald-200 disabled:opacity-50">+1 мес</button>
                   <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1, 'week')} className="rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-bold text-red-200 disabled:opacity-50">−1 нед</button>
                   <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1, 'week')} className="rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-xs font-bold text-emerald-200 disabled:opacity-50">+1 нед</button>
+                  <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1, 'day')} className="rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-bold text-red-200 disabled:opacity-50">−1 дн</button>
+                  <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1, 'day')} className="rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-xs font-bold text-emerald-200 disabled:opacity-50">+1 дн</button>
                   <button onClick={() => ban(u)} className="rounded-lg bg-white/5 px-2.5 py-1.5 text-xs font-bold text-slate-300 hover:bg-red-500/20 hover:text-red-200">
                     {u.banned ? 'Разбанить' : 'Бан'}
                   </button>

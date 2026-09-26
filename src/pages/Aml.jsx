@@ -182,7 +182,8 @@ export default function Aml() {
       setReason('')
       setShowReport(false)
     } catch (err) {
-      setReportMsg(err.message || 'Не удалось отправить жалобу.')
+      console.error('[aml] submitReport failed:', err)
+      setReportMsg(`Не удалось отправить жалобу (${err?.code || 'ошибка'}). Проверьте интернет.`)
     } finally {
       setReportBusy(false)
     }
