@@ -60,3 +60,41 @@ export function safeRemove(key) {
   }
   memFallback.delete(key)
 }
+
+// Nuclear option for a corrupted local Firestore persistence (e.g. after a
+// quota crash every query hangs with no error code). Clears our caches and
+// Firestore's IndexedDB, keeps Firebase Auth session, then reloads.
+export async function resetLocalCaches() {
+  try {
+    const doomed = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith('spreadbook-')) doomed.push(k)
+    }
+    doomed.forEach((k) => {
+      try {
+        localStorage.removeItem(k)
+      } catch {
+        /* ignore */
+      }
+    })
+  } catch {
+    /* ignore */
+  }
+  memFallback.clear()
+  try {
+    const dbs = (await indexedDB.databases?.()) || []
+    await Promise.all(
+      dbs
+        .map((d) => d.name)
+        .filter((n) => n && /firestore|firebase/i.test(n))
+        .map((n) => new Promise((res) => {
+          const req = indexedDB.deleteDatabase(n)
+          req.onsuccess = req.onerror = req.onblocked = () => res()
+        })),
+    )
+  } catch {
+    /* ignore */
+  }
+  window.location.reload()
+}

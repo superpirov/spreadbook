@@ -8,6 +8,7 @@ import { dayKey, fetchVisitStats, fetchDailyVisits, diag as diagVisits } from '.
 import { getAccessState, tronscanUrl } from '../utils/billing.js'
 import { dealFiatTotal } from '../utils/calculations.js'
 import { formatDate, formatDateTime, formatMoney } from '../utils/formatters.js'
+import { resetLocalCaches } from '../utils/storage.js'
 
 const accessOf = (u) => getAccessState({ plan: u.plan, trialStart: u.trialStart, expiresAt: u.expiresAt })
 
@@ -270,7 +271,18 @@ export default function Admin() {
         ))}
       </div>
 
-      {error && <p className="rounded-xl bg-red-500/15 px-4 py-3 text-sm text-red-200">{error}</p>}
+      {error && (
+        <div className="rounded-xl bg-red-500/15 px-4 py-3 text-sm text-red-200">
+          <p>{error}</p>
+          <button
+            type="button"
+            onClick={() => resetLocalCaches()}
+            className="mt-2 rounded-lg border border-red-300/30 px-3 py-1.5 text-xs font-semibold text-red-100 transition hover:bg-red-500/20"
+          >
+            Очистить локальный кэш и перезагрузить
+          </button>
+        </div>
+      )}
 
       <div className="card p-4">
         <div className="flex items-center justify-between">
