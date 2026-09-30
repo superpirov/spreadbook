@@ -506,8 +506,8 @@ export default function Admin() {
                           <button onClick={() => ban(u)} title={u.banned ? 'Разблокировать' : 'Заблокировать'} className={`whitespace-nowrap rounded-md px-2 py-1 text-[11px] font-bold ${u.banned ? 'bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25' : 'bg-white/5 text-slate-300 hover:bg-red-500/20 hover:text-red-200'}`}>
                              {u.banned ? 'Разбанить' : 'Бан'}
                           </button>
-                          <button disabled={busyUid === u.uid} onClick={() => removeUser(u)} title="Удалить аккаунт и все данные" className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-red-500/15 px-2 py-1 text-[11px] font-bold text-red-200 hover:bg-red-500/30 disabled:opacity-50">
-                            <Trash2 size={12} /> Удалить
+                          <button disabled={busyUid === u.uid} onClick={() => removeUser(u)} title="Удалить аккаунт и все данные" className="inline-flex items-center whitespace-nowrap rounded-md bg-red-500/15 px-2 py-1 text-[11px] font-bold text-red-200 hover:bg-red-500/30 disabled:opacity-50">
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       )}
