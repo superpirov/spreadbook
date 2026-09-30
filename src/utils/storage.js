@@ -61,6 +61,59 @@ export function safeRemove(key) {
   memFallback.delete(key)
 }
 
+// --- IndexedDB tiny key-value ---
+// For bulky caches that must NOT live in localStorage (screening lists,
+// community index). Quota is hundreds of MB, access is async and never
+// blocks render — hot reads are served from module-level memory instead.
+
+const IDB_NAME = 'spreadbook'
+const IDB_STORE = 'kv'
+let idbPromise = null
+
+function idb() {
+  if (!idbPromise) {
+    idbPromise = new Promise((resolve, reject) => {
+      try {
+        const req = indexedDB.open(IDB_NAME, 1)
+        req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE)
+        req.onsuccess = () => resolve(req.result)
+        req.onerror = () => reject(req.error)
+      } catch (e) {
+        reject(e)
+      }
+    })
+  }
+  return idbPromise
+}
+
+export async function idbGet(key) {
+  try {
+    const database = await idb()
+    return await new Promise((resolve, reject) => {
+      const rq = database.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get(key)
+      rq.onsuccess = () => resolve(rq.result ?? null)
+      rq.onerror = () => reject(rq.error)
+    })
+  } catch {
+    return null
+  }
+}
+
+export async function idbSet(key, value) {
+  try {
+    const database = await idb()
+    await new Promise((resolve, reject) => {
+      const tx = database.transaction(IDB_STORE, 'readwrite')
+      tx.objectStore(IDB_STORE).put(value, key)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 // Nuclear option for a corrupted local Firestore persistence (e.g. after a
 // quota crash every query hangs with no error code). Clears our caches and
 // Firestore's IndexedDB, keeps Firebase Auth session, then reloads.

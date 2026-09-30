@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, query, where, limit, serverTimestamp } from 'firebase/firestore'
+import { doc, getDoc, setDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, query, where, limit, orderBy, startAfter, serverTimestamp } from 'firebase/firestore'
 import { db } from './firebase.js'
 import { makeRefCode } from './referral.js'
 
@@ -65,11 +65,17 @@ export async function saveSubToCloud(uid, sub) {
 
 // --- Admin operations (Firestore rules allow only ADMIN_EMAILS) ---
 
-export async function fetchAllUsers() {
-  const snap = await withTimeout(getDocs(usersCol()), 15000, 'Загрузка пользователей')
-  return snap.docs
-    .map((d) => ({ uid: d.id, ...d.data() }))
-    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+// Paginated admin listing (newest first). Full-collection scans don't scale
+// to hundreds of users — the admin UI loads page by page ("Показать ещё").
+export const USERS_PAGE_SIZE = 100
+
+export async function fetchUsersPage({ pageSize = USERS_PAGE_SIZE, cursor = null } = {}) {
+  let q = query(usersCol(), orderBy('createdAt', 'desc'), limit(pageSize))
+  if (cursor) q = query(usersCol(), orderBy('createdAt', 'desc'), startAfter(cursor), limit(pageSize))
+  const snap = await withTimeout(getDocs(q), 15000, 'Загрузка пользователей')
+  const users = snap.docs.map((d) => ({ uid: d.id, ...d.data() }))
+  const last = snap.docs[snap.docs.length - 1] || null
+  return { users, cursor: last, hasMore: snap.docs.length === pageSize }
 }
 
 // Add (delta > 0) or remove (delta < 0) months of PRO, free of charge.

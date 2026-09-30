@@ -1,5 +1,6 @@
 import { doc, setDoc, collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from './firebase.js'
+import { safeGet, safeSet } from './storage.js'
 
 function withTimeout(promise, ms, label) {
   let timer = null
@@ -30,10 +31,10 @@ export function dayKey(date = new Date()) {
 
 export function getAnonId() {
   try {
-    let id = localStorage.getItem(ANON_KEY)
+    let id = safeGet(ANON_KEY)
     if (!id) {
       id = `anon-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
-      localStorage.setItem(ANON_KEY, id)
+      safeSet(ANON_KEY, id)
     }
     return id
   } catch {
@@ -41,11 +42,13 @@ export function getAnonId() {
   }
 }
 
-// Call once per app start. Fire-and-forget; never blocks UI.
+// Call once per app start AND on every login (useAuth listener): the boot
+// call runs before auth is known (guest id), the listener re-tracks with uid
+// so logged-in visits carry email. Fire-and-forget; never blocks UI.
 export async function trackVisit(user) {
   const today = dayKey()
   try {
-    if (localStorage.getItem(TRACK_KEY) === `${today}:${user?.id || ''}`) return
+    if (safeGet(TRACK_KEY) === `${today}:${user?.id || ''}`) return
   } catch {
     /* ignore */
   }
@@ -60,12 +63,15 @@ export async function trackVisit(user) {
       lastSeen: new Date().toISOString(),
     })
     try {
-      localStorage.setItem(TRACK_KEY, `${today}:${user?.id || ''}`)
+      safeSet(TRACK_KEY, `${today}:${user?.id || ''}`)
     } catch {
       /* ignore */
     }
-  } catch {
-    /* stats must never break the app */
+  } catch (e) {
+    // Loud on purpose: a silent catch here hid unpublished visits rules
+    // (empty stats) for weeks. Stats must not break the app, but the reason
+    // must be visible in console.
+    console.warn('[spreadbook] trackVisit failed:', e?.code || e?.message || e)
   }
 }
 
@@ -88,8 +94,12 @@ export async function fetchDailyVisits(days = 14) {
   const now = new Date()
   const from = new Date(now)
   from.setDate(now.getDate() - (days - 1))
-  const snap = await getDocs(
-    query(collection(db, 'visits'), where('date', '>=', dayKey(from)), where('date', '<=', dayKey(now))),
+  const snap = await withTimeout(
+    getDocs(
+      query(collection(db, 'visits'), where('date', '>=', dayKey(from)), where('date', '<=', dayKey(now))),
+    ),
+    15000,
+    'Загрузка графика посещаемости',
   )
   const byDay = new Map()
   for (const d of snap.docs.map((x) => x.data())) {

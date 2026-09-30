@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ShieldAlert, Minus, Plus, ExternalLink, RefreshCw, Flag, Check, X, Trash2, Search, Banknote, Ban, ChevronDown, FileSpreadsheet } from 'lucide-react'
+import { ShieldAlert, Minus, Plus, ExternalLink, RefreshCw, Flag, Check, X, Trash2, Search, Banknote, Ban, ChevronDown, FileSpreadsheet, Stethoscope } from 'lucide-react'
 import { useAuth } from '../store/useAuth.js'
 import { isAdmin } from '../utils/admin.js'
-import { fetchAllUsers, adjustMonths, adjustDays, setBanned, fetchUserDeals, fetchReports, moderateReport, deleteReport, fetchCashPayouts, markPayoutPaid, diag } from '../utils/users.js'
+import { fetchUsersPage, adjustMonths, adjustDays, setBanned, fetchUserDeals, fetchReports, moderateReport, deleteReport, fetchCashPayouts, markPayoutPaid, diag } from '../utils/users.js'
 import { dayKey, fetchVisitStats, fetchDailyVisits, diag as diagVisits } from '../utils/visits.js'
 import { getAccessState, tronscanUrl } from '../utils/billing.js'
 import { dealFiatTotal } from '../utils/calculations.js'
 import { formatDate, formatDateTime, formatMoney } from '../utils/formatters.js'
 import { resetLocalCaches } from '../utils/storage.js'
+import { runConnDiag, summarizeConnDiag } from '../utils/connDiag.js'
 
 const accessOf = (u) => getAccessState({ plan: u.plan, trialStart: u.trialStart, expiresAt: u.expiresAt })
 
@@ -29,6 +30,11 @@ export default function Admin() {
   const [visits, setVisits] = useState(null) // { day, week, month, year }
   const [daily, setDaily] = useState([])
   const [visitsError, setVisitsError] = useState('')
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [diagRunning, setDiagRunning] = useState(false)
+  const [diagResults, setDiagResults] = useState(null)
+  const cursorRef = useRef(null)
 
   const loadVisits = useCallback(async () => {
     try {
@@ -76,13 +82,45 @@ export default function Admin() {
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
+    cursorRef.current = null
     try {
-      setUsers(await fetchAllUsers())
+      const page = await fetchUsersPage({})
+      setUsers(page.users)
+      cursorRef.current = page.cursor
+      setHasMore(page.hasMore)
     } catch (e) {
       console.error('[admin] users failed:', e)
-      setError(`Не удалось загрузить пользователей (${diag(e)}). Проверьте интернет, VPN/блокировщики и rules Firestore.`)
+      setError(`Не удалось загрузить пользователей (${diag(e)}). Запустите диагностику ниже — она покажет точную причину.`)
     } finally {
       setLoading(false)
+    }
+  }, [])
+
+  const loadMore = useCallback(async () => {
+    if (!cursorRef.current || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const page = await fetchUsersPage({ cursor: cursorRef.current })
+      setUsers((prev) => [...prev, ...page.users])
+      cursorRef.current = page.cursor
+      setHasMore(page.hasMore)
+    } catch (e) {
+      console.error('[admin] loadMore failed:', e)
+      setError(`Не удалось догрузить пользователей (${diag(e)}).`)
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [loadingMore])
+
+  const runDiag = useCallback(async () => {
+    setDiagRunning(true)
+    setDiagResults(null)
+    try {
+      setDiagResults(await runConnDiag())
+    } catch (e) {
+      console.error('[admin] diag failed:', e)
+    } finally {
+      setDiagRunning(false)
     }
   }, [])
 
@@ -259,7 +297,7 @@ export default function Admin() {
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          ['Всего', stats.total],
+          [hasMore ? 'Загружено' : 'Всего', stats.total],
           ['PRO', stats.pro],
           ['Триал', stats.trial],
           ['Истёк', stats.expired],
@@ -283,6 +321,41 @@ export default function Admin() {
           </button>
         </div>
       )}
+
+      <details className="card p-4">
+        <summary className="flex cursor-pointer items-center gap-2 text-sm font-bold">
+          <Stethoscope size={15} /> Диагностика соединения
+        </summary>
+        <p className="mt-1 text-xs text-slate-500">
+          По очереди проверяет: хранилище браузера, прямой HTTPS до Firestore, запись в visits (rules) и запрос через SDK.
+          Запустите и пришлите результат, если ошибки не уходят.
+        </p>
+        <button onClick={runDiag} disabled={diagRunning} className="btn-ghost mt-2 px-3 py-1.5 text-xs">
+          <RefreshCw size={13} className={diagRunning ? 'animate-spin' : ''} /> {diagRunning ? 'Проверяю…' : 'Запустить диагностику'}
+        </button>
+        {diagResults && (
+          <div className="mt-3 space-y-1.5">
+            {diagResults.map((r) => (
+              <div key={r.name} className="flex items-start gap-2 text-xs">
+                <span className={`mt-0.5 font-bold ${r.ok ? 'text-emerald-300' : 'text-red-300'}`}>{r.ok ? '✓' : '✗'}</span>
+                <div className="min-w-0">
+                  <span className="font-semibold text-slate-200">{r.name}</span>
+                  {r.ms > 0 && <span className="text-slate-500"> · {r.ms} мс</span>}
+                  <div className="break-words text-slate-400">{r.detail}</div>
+                </div>
+              </div>
+            ))}
+            <p className="rounded-xl bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-200">{summarizeConnDiag(diagResults)}</p>
+            <button
+              type="button"
+              onClick={() => resetLocalCaches()}
+              className="rounded-lg border border-white/15 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+            >
+              Очистить локальный кэш и перезагрузить
+            </button>
+          </div>
+        )}
+      </details>
 
       <div className="card p-4">
         <div className="flex items-center justify-between">
@@ -467,6 +540,13 @@ export default function Admin() {
             )
           })}
         </div>
+        {hasMore && (
+          <div className="border-t border-white/10 p-3 text-center">
+            <button onClick={loadMore} disabled={loadingMore} className="btn-ghost px-4 py-2 text-xs">
+              <RefreshCw size={13} className={loadingMore ? 'animate-spin' : ''} /> {loadingMore ? 'Загрузка…' : `Показать ещё (загружено ${users.length})`}
+            </button>
+          </div>
+        )}
       </div>
       <p className="text-[11px] text-slate-500">
         Добавление месяцев продлевает PRO от max(сейчас, текущий срок). Убавление сдвигает срок назад. Изменения применяются у пользователя при следующем входе/обновлении (подписка подтягивается из облака).

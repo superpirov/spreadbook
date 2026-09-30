@@ -12,7 +12,7 @@ import {
   limit,
 } from 'firebase/firestore'
 import { db } from '../utils/firebase.js'
-import { safeGet, safeSet } from '../utils/storage.js'
+import { safeGet } from '../utils/storage.js'
 
 const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 const enc = (name) => encodeURIComponent(name)
@@ -30,32 +30,6 @@ const contactsCol = (owner) => collection(db, 'users', owner, 'contacts')
 const contactDoc = (owner, name) => doc(db, 'users', owner, 'contacts', enc(name))
 const userDoc = (owner) => doc(db, 'users', owner)
 const amlCol = (owner) => collection(db, 'users', owner, 'amlchecks')
-
-const cacheKey = (owner) => `spreadbook-cache-v1-${owner}`
-
-function loadCache(owner) {
-  try {
-    const raw = safeGet(cacheKey(owner))
-    if (!raw) return null
-    const d = JSON.parse(raw)
-    if (!d || typeof d !== 'object') return null
-    return {
-      deals: Array.isArray(d.deals) ? d.deals : [],
-      ratings: d.ratings && typeof d.ratings === 'object' ? d.ratings : {},
-      profiles: d.profiles && typeof d.profiles === 'object' ? d.profiles : {},
-      knownCounterparties: Array.isArray(d.knownCounterparties) ? d.knownCounterparties : [],
-      period: d.period || 'all',
-      amlHistory: Array.isArray(d.amlHistory) ? d.amlHistory : [],
-      aml: d.aml && typeof d.aml === 'object' ? d.aml : {},
-      templates: Array.isArray(d.templates) ? d.templates : [],
-      blacklist: Array.isArray(d.blacklist) ? d.blacklist : [],
-      goalAmount: Number(d.goalAmount) || 0,
-      watchlist: Array.isArray(d.watchlist) ? d.watchlist : [],
-    }
-  } catch {
-    return null
-  }
-}
 
 function readLegacyLocal() {
   // Pre-cloud database (spreadbook-storage-v2), migrated once to the cloud.
@@ -98,37 +72,10 @@ export const useStore = create((set, get) => ({
 
   owner: () => boundUid,
 
-  saveCache: () => {
-    if (!boundUid) return
-    const s = get()
-    try {
-      // Lean cache: history keeps summary only (full KYT reports live in
-      // Firestore and reload on snapshot). Keeps localStorage far from quota.
-      const leanHistory = s.amlHistory.slice(0, 50).map((h) => ({
-        ...h,
-        matches: [],
-        kyt: h.kyt ? { score: h.kyt.score, level: h.kyt.level, depth: h.kyt.depth } : h.kyt,
-      }))
-      safeSet(
-        cacheKey(boundUid),
-        JSON.stringify({
-          deals: s.deals,
-          ratings: s.ratings,
-          profiles: s.profiles,
-          knownCounterparties: s.knownCounterparties,
-          period: s.period,
-          amlHistory: leanHistory,
-          aml: s.aml,
-          templates: s.templates,
-          blacklist: s.blacklist,
-          goalAmount: s.goalAmount,
-          watchlist: s.watchlist,
-        }),
-      )
-    } catch {
-      /* storage full/blocked — cloud remains source of truth */
-    }
-  },
+  // No local mirror by design: Firestore's managed offline cache (IndexedDB,
+  // LRU eviction, quota-aware) is the offline layer. Kept as a no-op so the
+  // existing call sites stay untouched; snapshots are the source of truth.
+  saveCache: () => {},
 
   // Attach realtime listeners for a Firebase user. Idempotent per uid.
   bindUser: (owner) => {
@@ -137,19 +84,20 @@ export const useStore = create((set, get) => ({
     boundUid = owner
     migratedThisSession = false
 
-    const cached = loadCache(owner)
+    // Fresh boot from empty state: realtime snapshots fill it within a
+    // moment (served from the Firestore offline cache when offline).
     set({
-      deals: cached?.deals || [],
-      ratings: cached?.ratings || {},
-      profiles: cached?.profiles || {},
-      knownCounterparties: cached?.knownCounterparties || [],
-      period: cached?.period || 'all',
-      amlHistory: cached?.amlHistory || [],
-      aml: cached?.aml || {},
-      templates: cached?.templates || [],
-      blacklist: cached?.blacklist || [],
-      goalAmount: cached?.goalAmount || 0,
-      watchlist: cached?.watchlist || [],
+      deals: [],
+      ratings: {},
+      profiles: {},
+      knownCounterparties: [],
+      period: 'all',
+      amlHistory: [],
+      aml: {},
+      templates: [],
+      blacklist: [],
+      goalAmount: 0,
+      watchlist: [],
       cloudReady: false,
       cloudError: null,
     })

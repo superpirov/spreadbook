@@ -1,6 +1,6 @@
 import bs58 from 'bs58'
 import SEIZURES from '../data/seizures.json'
-import { safeGet, safeSet } from './storage.js'
+import { idbGet, idbSet } from './storage.js'
 
 // Local AML screening engine.
 //
@@ -94,17 +94,26 @@ export function extractAddresses(text) {
 }
 
 // --- lists: fetch, cache, lookup ---
+// Cache lives in module memory (sync hot reads) + IndexedDB (survives
+// reloads, hundreds of MB quota). localStorage is NOT used by design.
+
+let memLists = null
+let memCommunity = null
+
+// Call once at startup (main.jsx, fire-and-forget).
+export async function hydrateAmlCaches() {
+  try {
+    const [l, c] = await Promise.all([idbGet(CACHE_KEY), idbGet(COMMUNITY_KEY)])
+    if (l && typeof l.index === 'object') memLists = l
+    if (c && typeof c.index === 'object') memCommunity = c
+  } catch {
+    /* ignore */
+  }
+}
 
 export function getCachedLists() {
-  try {
-    const raw = safeGet(CACHE_KEY)
-    if (!raw) return null
-    const d = JSON.parse(raw)
-    if (!d || typeof d.index !== 'object') return null
-    return d // { updatedAt, counts, index: { key: sourceId } }
-  } catch {
-    return null
-  }
+  if (memLists && typeof memLists.index === 'object') return memLists
+  return null
 }
 
 export async function refreshLists() {
@@ -142,11 +151,8 @@ export async function refreshLists() {
   const prev = getCachedLists()
   const merged = { ...(prev?.index || {}), ...index }
   const data = { updatedAt: new Date().toISOString(), counts, index: merged, total: Object.keys(merged).length }
-  try {
-      safeSet(CACHE_KEY, JSON.stringify(data))
-  } catch {
-    /* storage full — keep in-memory use only */
-  }
+  memLists = data
+  idbSet(CACHE_KEY, data) // async, never throws
   return { ...data, errors }
 }
 
@@ -221,18 +227,12 @@ export function getCanonical(raw) {
 }
 
 // --- Community index (crowdsourced scam addresses, admin-moderated) ---
-// Synced from Firestore `reports` (status=approved) into localStorage.
+// Synced from Firestore `reports` (status=approved) into memory + IndexedDB.
 // Merged into every lookup via the `community` param of checkAddress().
 
 export function getCommunityIndex() {
-  try {
-    const raw = safeGet(COMMUNITY_KEY)
-    const d = raw ? JSON.parse(raw) : null
-    if (!d || typeof d.index !== 'object') return { updatedAt: null, index: {} }
-    return d
-  } catch {
-    return { updatedAt: null, index: {} }
-  }
+  if (memCommunity && typeof memCommunity.index === 'object') return memCommunity
+  return { updatedAt: null, index: {} }
 }
 
 // entries: [{ address, reason }] — caller fetches via fetchApprovedReports().
@@ -246,11 +246,8 @@ export function saveCommunityIndex(entries) {
     if (!(key in index)) index[key] = e.reason || 'Жалоба сообщества'
   }
   const data = { updatedAt: new Date().toISOString(), index, total: Object.keys(index).length }
-  try {
-      safeSet(COMMUNITY_KEY, JSON.stringify(data))
-  } catch {
-    /* ignore */
-  }
+  memCommunity = data
+  idbSet(COMMUNITY_KEY, data) // async, never throws
   return data
 }
 

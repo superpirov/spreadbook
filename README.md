@@ -57,7 +57,7 @@ npm run deploy
 
 ## Посещаемость
 
-Без бэкенда: `visits/{YYYY-MM-DD}_{visitorId}` — один документ на посетителя в день (вошедшие — по uid, гости — по анонимному id). Повторный заход обновляет `lastSeen`, день считается один раз.
+Без бэкенда: `visits/{YYYY-MM-DD}_{visitorId}` — один документ на посетителя в день (вошедшие — по uid, гости — по анонимному id). Повторный заход обновляет `lastSeen`, день считается один раз. Трекер вызывается при старте (гость) и при каждом входе (uid+email). ВАЖНО: без Publish правил ниже запись запрещена и статистика пуста — админская «Диагностика соединения» покажет это как 403 на пробе visits.
 - Трекер `trackVisit()` в `main.jsx` + при входе (`useAuth`), троттлится localStorage-флагом, никогда не ломает приложение.
 - Админка: уникальные + визиты за день/7 дней/месяц/год + график 14 дней. Правила — в блоке rules выше (писать могут все с валидной формой, читать только админ).
 
@@ -142,12 +142,12 @@ service cloud.firestore {
 }
 ```
 
-Как устроен стор (`src/store/useStore.js`): при входе `bindUser(uid)` поднимает 3 realtime-подписки (`onSnapshot`), localStorage остаётся мгновенным кэшем (`spreadbook-cache-v1-{uid}`) и офлайн-фallback; запись — оптимистично локально, затем во Firestore. Включён persistent offline cache Firestore: без интернета всё работает, при появлении сети досинхронизируется само. Старая локальная база (`spreadbook-storage-v2`) один раз автоматически переезжает в облако, если облако пусто. Выход (`unbindUser`) очищает данные из памяти — важно на чужих устройствах.
+Как устроен стор (`src/store/useStore.js`): при входе `bindUser(uid)` поднимает 4 realtime-подписки (`onSnapshot`), локального зеркала в localStorage НЕТ by design — офлайн-слой это managed-кэш самого Firestore (IndexedDB, LRU, quota-aware). Старт всегда из пустого состояния, снапшоты (из кэша при офлайне) заполняют его за мгновение. Старая локальная база (`spreadbook-storage-v2`) один раз автоматически переезжает в облако, если облако пусто. В localStorage остаются только байтовые мелочи (тема, anon-id, ref-код, кошелёк выплат, сессия zustand ~1КБ). Выход (`unbindUser`) очищает данные из памяти — важно на чужих устройствах. Список пользователей в админке — постраничный (`fetchUsersPage`, по 100, «Показать ещё»).
 
 ## AML-скрининг
 
 Страница `/app/aml` + кнопка «Проверить кошельки» в карточке контрагента.
-- Движок `src/utils/aml.js`: OFAC SDN списки (репо 0xB10C, ветка `lists`, TXT по сетям TRX/ETH/USDT/USDC/BSC/XBT/LTC/SOL) тянутся с raw.githubusercontent и кэшируются в localStorage (`spreadbook-aml-v1`), кнопка «Обновить базы».
+- Движок `src/utils/aml.js`: OFAC SDN списки (репо 0xB10C, ветка `lists`, TXT по сетям TRX/ETH/USDT/USDC/BSC/XBT/LTC/SOL) тянутся с raw.githubusercontent и кэшируются в память + IndexedDB (`hydrateAmlCaches` при старте, localStorage не используется), кнопка «Обновить базы».
 - Нормализация: EVM → lowercase; TRON base58 ↔ hex (`bs58`), кросс-проверка EVM-представления Tron-адреса.
 - Живой статус заморозки USDT: Ethereum `isBlackListed` (`0xe47d6060`) через public RPC, TRON — `triggerconstantcontract` в Trongrid. Недоступность RPC = «не проверено», не ошибка.
 - Tronscan Security (`checkTronSecurity`, нужен `TRONSCAN_API_KEY`): `red_tag` и риск-флаги идут в вердикт; те же флаги опрашиваются у топ-8 прямых контрагентов в KYT.

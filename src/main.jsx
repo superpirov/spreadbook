@@ -6,9 +6,13 @@ import { useAuth } from './store/useAuth.js'
 import { captureRefParam } from './utils/referral.js'
 import { applyTheme, getTheme } from './utils/theme.js'
 import { trackVisit } from './utils/visits.js'
+import { hydrateAmlCaches } from './utils/aml.js'
 
 // Theme: dark by default (traders expect dark terminals), saved per device.
 applyTheme(getTheme())
+
+// Warm AML screening caches (OFAC index + community) from IndexedDB.
+hydrateAmlCaches()
 
 // Remember ?ref= invite code (consumed on registration).
 captureRefParam()
