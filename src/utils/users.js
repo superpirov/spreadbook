@@ -12,6 +12,12 @@ function withTimeout(promise, ms, label) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
 }
 
+export function diag(e) {
+  const code = e?.code || 'без кода'
+  const msg = String(e?.message || e || '').slice(0, 160)
+  return `${code}: ${msg}`
+}
+
 // Firestore user registry: collection "users", doc id = Firebase uid.
 // Doc shape: { email, name, createdAt, lastSeen, trialStart, plan, planId,
 //              txHash, paidAt, expiresAt }
@@ -60,7 +66,7 @@ export async function saveSubToCloud(uid, sub) {
 // --- Admin operations (Firestore rules allow only ADMIN_EMAILS) ---
 
 export async function fetchAllUsers() {
-  const snap = await getDocs(usersCol())
+  const snap = await withTimeout(getDocs(usersCol()), 15000, 'Загрузка пользователей')
   return snap.docs
     .map((d) => ({ uid: d.id, ...d.data() }))
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
@@ -102,7 +108,7 @@ export async function setBanned(uid, banned) {
 
 // Admin inspection: full deal list of any user (rules allow admin reads).
 export async function fetchUserDeals(uid) {
-  const snap = await getDocs(collection(db, 'users', uid, 'deals'))
+  const snap = await withTimeout(getDocs(collection(db, 'users', uid, 'deals')), 15000, 'Загрузка сделок')
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
 }
 
@@ -291,7 +297,11 @@ export async function claimReferralCash(referrerUid, referralId, payoutWallet, c
 // --- Admin: cash payouts ---
 
 export async function fetchCashPayouts() {
-  const snap = await getDocs(query(referralsCol(), where('bonusType', '==', 'cash'), limit(200)))
+  const snap = await withTimeout(
+    getDocs(query(referralsCol(), where('bonusType', '==', 'cash'), limit(200))),
+    15000,
+    'Загрузка выплат',
+  )
   return snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
     .sort((a, b) => new Date(b.claimedAt || 0) - new Date(a.claimedAt || 0))

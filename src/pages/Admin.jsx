@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom'
 import { ShieldAlert, Minus, Plus, ExternalLink, RefreshCw, Flag, Check, X, Trash2, Search, Banknote, Ban, ChevronDown, FileSpreadsheet } from 'lucide-react'
 import { useAuth } from '../store/useAuth.js'
 import { isAdmin } from '../utils/admin.js'
-import { fetchAllUsers, adjustMonths, adjustDays, setBanned, fetchUserDeals, fetchReports, moderateReport, deleteReport, fetchCashPayouts, markPayoutPaid } from '../utils/users.js'
-import { dayKey, fetchVisitStats, fetchDailyVisits } from '../utils/visits.js'
+import { fetchAllUsers, adjustMonths, adjustDays, setBanned, fetchUserDeals, fetchReports, moderateReport, deleteReport, fetchCashPayouts, markPayoutPaid, diag } from '../utils/users.js'
+import { dayKey, fetchVisitStats, fetchDailyVisits, diag as diagVisits } from '../utils/visits.js'
 import { getAccessState, tronscanUrl } from '../utils/billing.js'
 import { dealFiatTotal } from '../utils/calculations.js'
 import { formatDate, formatDateTime, formatMoney } from '../utils/formatters.js'
@@ -49,7 +49,7 @@ export default function Admin() {
       setVisitsError('')
     } catch (e) {
       console.error('[admin] visits failed:', e)
-      setVisitsError(`Посещаемость не загрузилась (${e?.code || 'ошибка'}) — проверьте rules для коллекции visits.`)
+      setVisitsError(`Посещаемость не загрузилась (${diagVisits(e)}) — проверьте rules для коллекции visits.`)
     }
   }, [])
 
@@ -68,7 +68,7 @@ export default function Admin() {
       setReportsError('')
     } catch (e) {
       console.error('[admin] loadReports failed:', e)
-      setReportsError(`Жалобы не загрузились (${e?.code || 'ошибка'}) — проверьте rules для коллекции reports.`)
+      setReportsError(`Жалобы не загрузились (${diag(e)}) — проверьте rules для коллекции reports.`)
     }
   }, [])
 
@@ -78,7 +78,8 @@ export default function Admin() {
     try {
       setUsers(await fetchAllUsers())
     } catch (e) {
-      setError('Не удалось загрузить пользователей. Проверьте: 1) Firestore Database создан в консоли, 2) опубликованы rules из README (доступ только для admin email), 3) вы вошли под email администратора.')
+      console.error('[admin] users failed:', e)
+      setError(`Не удалось загрузить пользователей (${diag(e)}). Проверьте интернет, VPN/блокировщики и rules Firestore.`)
     } finally {
       setLoading(false)
     }

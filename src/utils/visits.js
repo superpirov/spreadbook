@@ -1,6 +1,20 @@
 import { doc, setDoc, collection, getDocs, query, where } from 'firebase/firestore'
 import { db } from './firebase.js'
 
+function withTimeout(promise, ms, label) {
+  let timer = null
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label}: превышено ожидание ответа`)), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+}
+
+export function diag(e) {
+  const code = e?.code || 'без кода'
+  const msg = String(e?.message || e || '').slice(0, 160)
+  return `${code}: ${msg}`
+}
+
 // Unique visitor stats (no backend).
 // One doc per visitor per day: visits/{YYYY-MM-DD}_{visitorId}.
 // Logged-in users are identified by uid (stable across devices),
@@ -57,7 +71,11 @@ export async function trackVisit(user) {
 
 // Admin: docs in [from, to] (YYYY-MM-DD). Returns { visits, uniques }.
 export async function fetchVisitStats(from, to) {
-  const snap = await getDocs(query(collection(db, 'visits'), where('date', '>=', from), where('date', '<=', to)))
+  const snap = await withTimeout(
+    getDocs(query(collection(db, 'visits'), where('date', '>=', from), where('date', '<=', to))),
+    15000,
+    'Загрузка посещаемости',
+  )
   const docs = snap.docs.map((d) => d.data())
   return {
     visits: docs.length,
