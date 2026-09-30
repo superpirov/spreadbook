@@ -1,5 +1,6 @@
 import bs58 from 'bs58'
 import SEIZURES from '../data/seizures.json'
+import { safeGet, safeSet } from './storage.js'
 
 // Local AML screening engine.
 //
@@ -96,7 +97,7 @@ export function extractAddresses(text) {
 
 export function getCachedLists() {
   try {
-    const raw = localStorage.getItem(CACHE_KEY)
+    const raw = safeGet(CACHE_KEY)
     if (!raw) return null
     const d = JSON.parse(raw)
     if (!d || typeof d.index !== 'object') return null
@@ -142,7 +143,7 @@ export async function refreshLists() {
   const merged = { ...(prev?.index || {}), ...index }
   const data = { updatedAt: new Date().toISOString(), counts, index: merged, total: Object.keys(merged).length }
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(data))
+      safeSet(CACHE_KEY, JSON.stringify(data))
   } catch {
     /* storage full — keep in-memory use only */
   }
@@ -225,7 +226,7 @@ export function getCanonical(raw) {
 
 export function getCommunityIndex() {
   try {
-    const raw = localStorage.getItem(COMMUNITY_KEY)
+    const raw = safeGet(COMMUNITY_KEY)
     const d = raw ? JSON.parse(raw) : null
     if (!d || typeof d.index !== 'object') return { updatedAt: null, index: {} }
     return d
@@ -246,7 +247,7 @@ export function saveCommunityIndex(entries) {
   }
   const data = { updatedAt: new Date().toISOString(), index, total: Object.keys(index).length }
   try {
-    localStorage.setItem(COMMUNITY_KEY, JSON.stringify(data))
+      safeSet(COMMUNITY_KEY, JSON.stringify(data))
   } catch {
     /* ignore */
   }

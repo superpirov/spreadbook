@@ -12,6 +12,7 @@ import {
   limit,
 } from 'firebase/firestore'
 import { db } from '../utils/firebase.js'
+import { safeGet, safeSet } from '../utils/storage.js'
 
 const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 const enc = (name) => encodeURIComponent(name)
@@ -34,7 +35,7 @@ const cacheKey = (owner) => `spreadbook-cache-v1-${owner}`
 
 function loadCache(owner) {
   try {
-    const raw = localStorage.getItem(cacheKey(owner))
+    const raw = safeGet(cacheKey(owner))
     if (!raw) return null
     const d = JSON.parse(raw)
     if (!d || typeof d !== 'object') return null
@@ -59,7 +60,7 @@ function loadCache(owner) {
 function readLegacyLocal() {
   // Pre-cloud database (spreadbook-storage-v2), migrated once to the cloud.
   try {
-    const raw = localStorage.getItem('spreadbook-storage-v2')
+    const raw = safeGet('spreadbook-storage-v2')
     const d = JSON.parse(raw)?.state
     if (!d) return null
     return {
@@ -101,7 +102,14 @@ export const useStore = create((set, get) => ({
     if (!boundUid) return
     const s = get()
     try {
-      localStorage.setItem(
+      // Lean cache: history keeps summary only (full KYT reports live in
+      // Firestore and reload on snapshot). Keeps localStorage far from quota.
+      const leanHistory = s.amlHistory.slice(0, 50).map((h) => ({
+        ...h,
+        matches: [],
+        kyt: h.kyt ? { score: h.kyt.score, level: h.kyt.level, depth: h.kyt.depth } : h.kyt,
+      }))
+      safeSet(
         cacheKey(boundUid),
         JSON.stringify({
           deals: s.deals,
@@ -109,7 +117,7 @@ export const useStore = create((set, get) => ({
           profiles: s.profiles,
           knownCounterparties: s.knownCounterparties,
           period: s.period,
-          amlHistory: s.amlHistory.slice(0, 100),
+          amlHistory: leanHistory,
           aml: s.aml,
           templates: s.templates,
           blacklist: s.blacklist,
