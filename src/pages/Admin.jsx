@@ -461,16 +461,15 @@ export default function Admin() {
                         </button>
                         <div className="font-semibold">{u.name || '—'}</div>
                         {u.banned && !u.deletedAt && <span className="rounded bg-red-500/20 px-1.5 py-px text-[10px] font-bold text-red-200">БАН</span>}
-                        {u.deletedAt && <span className="rounded bg-red-500/30 px-1.5 py-px text-[10px] font-bold text-red-100">УДАЛЁН</span>}
                       </div>
                       <div className="text-xs text-slate-400">{u.email}</div>
                       <div className="text-[11px] text-slate-500">рег. {u.createdAt ? formatDate(u.createdAt) : '—'}</div>
                     </td>
                     <td className="px-4 py-2.5">
                       {u.deletedAt
-                        ? <span className="rounded-lg bg-red-500/15 px-2 py-1 text-xs font-bold text-red-200">Удалён</span>
+                        ? <span className="whitespace-nowrap rounded-lg bg-red-500/15 px-2 py-1 text-xs font-bold text-red-200">Удалён</span>
                         : <StatusPill st={st} />}
-                      {st.status === 'trial' && <div className="mt-0.5 text-[11px] text-slate-500">триал с {u.trialStart ? formatDate(u.trialStart) : '—'}</div>}
+                      {!u.deletedAt && st.status === 'trial' && <div className="mt-0.5 text-[11px] text-slate-500">триал с {u.trialStart ? formatDate(u.trialStart) : '—'}</div>}
                       {u.planId && <div className="mt-0.5 text-[11px] text-slate-500">тариф: {u.planId}</div>}
                     </td>
                     <td className="whitespace-nowrap px-4 py-2.5">{u.expiresAt ? formatDateTime(u.expiresAt) : '—'}</td>
@@ -482,34 +481,36 @@ export default function Admin() {
                       ) : '—'}
                     </td>
                     <td className="whitespace-nowrap px-4 py-2.5">
-                      <div className="flex flex-wrap gap-1.5">
-                        <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1)} title="Убрать 1 месяц" className="rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-bold text-red-200 hover:bg-red-500/25 disabled:opacity-50">
-                          <Minus size={13} /> 1 мес
-                        </button>
-                        <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1)} title="Добавить 1 месяц бесплатно" className="rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50">
-                          <Plus size={13} /> 1 мес
-                        </button>
-                        <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1, 'week')} title="Убрать 1 неделю" className="rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-bold text-red-200 hover:bg-red-500/25 disabled:opacity-50">
-                          −1 нед
-                        </button>
-                        <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1, 'week')} title="Добавить 1 неделю бесплатно" className="rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50">
-                          +1 нед
-                        </button>
-                        <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1, 'day')} title="Убрать 1 день" className="rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-bold text-red-200 hover:bg-red-500/25 disabled:opacity-50">
-                          −1 дн
-                        </button>
-                        <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1, 'day')} title="Добавить 1 день бесплатно" className="rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50">
-                          +1 дн
-                        </button>
-                        <button onClick={() => ban(u)} title={u.banned ? 'Разблокировать' : 'Заблокировать'} className={`rounded-lg px-2.5 py-1.5 text-xs font-bold ${u.banned ? 'bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25' : 'bg-white/5 text-slate-300 hover:bg-red-500/20 hover:text-red-200'}`}>
-                           {u.banned ? 'Разбанить' : 'Бан'}
-                        </button>
-                        {!u.deletedAt && (
-                          <button disabled={busyUid === u.uid} onClick={() => removeUser(u)} title="Удалить аккаунт и все данные" className="rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-bold text-red-200 hover:bg-red-500/30 disabled:opacity-50">
-                            <Trash2 size={13} /> Удалить
+                      {u.deletedAt ? (
+                        <span className="px-2 py-1 text-[11px] text-slate-500">—</span>
+                      ) : (
+                        <div className="flex flex-nowrap items-center gap-1">
+                          <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1)} title="Убрать 1 месяц" className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-red-500/15 px-2 py-1 text-[11px] font-bold text-red-200 hover:bg-red-500/25 disabled:opacity-50">
+                            <Minus size={12} /> 1 мес
                           </button>
-                        )}
-                      </div>
+                          <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1)} title="Добавить 1 месяц бесплатно" className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-emerald-500/15 px-2 py-1 text-[11px] font-bold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50">
+                            <Plus size={12} /> 1 мес
+                          </button>
+                          <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1, 'week')} title="Убрать 1 неделю" className="whitespace-nowrap rounded-md bg-red-500/15 px-2 py-1 text-[11px] font-bold text-red-200 hover:bg-red-500/25 disabled:opacity-50">
+                            −1 нед
+                          </button>
+                          <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1, 'week')} title="Добавить 1 неделю бесплатно" className="whitespace-nowrap rounded-md bg-emerald-500/15 px-2 py-1 text-[11px] font-bold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50">
+                            +1 нед
+                          </button>
+                          <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1, 'day')} title="Убрать 1 день" className="whitespace-nowrap rounded-md bg-red-500/15 px-2 py-1 text-[11px] font-bold text-red-200 hover:bg-red-500/25 disabled:opacity-50">
+                            −1 дн
+                          </button>
+                          <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1, 'day')} title="Добавить 1 день бесплатно" className="whitespace-nowrap rounded-md bg-emerald-500/15 px-2 py-1 text-[11px] font-bold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50">
+                            +1 дн
+                          </button>
+                          <button onClick={() => ban(u)} title={u.banned ? 'Разблокировать' : 'Заблокировать'} className={`whitespace-nowrap rounded-md px-2 py-1 text-[11px] font-bold ${u.banned ? 'bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25' : 'bg-white/5 text-slate-300 hover:bg-red-500/20 hover:text-red-200'}`}>
+                             {u.banned ? 'Разбанить' : 'Бан'}
+                          </button>
+                          <button disabled={busyUid === u.uid} onClick={() => removeUser(u)} title="Удалить аккаунт и все данные" className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-red-500/15 px-2 py-1 text-[11px] font-bold text-red-200 hover:bg-red-500/30 disabled:opacity-50">
+                            <Trash2 size={12} /> Удалить
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                   {expanded === u.uid && (
@@ -545,7 +546,6 @@ export default function Admin() {
                       </button>
                       <span className="truncate font-semibold">{u.name || u.email}</span>
                       {u.banned && !u.deletedAt && <span className="rounded bg-red-500/20 px-1.5 py-px text-[10px] font-bold text-red-200">БАН</span>}
-                      {u.deletedAt && <span className="rounded bg-red-500/30 px-1.5 py-px text-[10px] font-bold text-red-100">УДАЛЁН</span>}
                     </div>
                     <div className="truncate text-xs text-slate-400">{u.email}</div>
                   </div>
@@ -559,20 +559,24 @@ export default function Admin() {
                     <UserDetails det={details[u.uid]} />
                   </div>
                 )}
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1)} className="rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-bold text-red-200 disabled:opacity-50">−1 мес</button>
-                  <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1)} className="rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-xs font-bold text-emerald-200 disabled:opacity-50">+1 мес</button>
-                  <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1, 'week')} className="rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-bold text-red-200 disabled:opacity-50">−1 нед</button>
-                  <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1, 'week')} className="rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-xs font-bold text-emerald-200 disabled:opacity-50">+1 нед</button>
-                  <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1, 'day')} className="rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-bold text-red-200 disabled:opacity-50">−1 дн</button>
-                  <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1, 'day')} className="rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-xs font-bold text-emerald-200 disabled:opacity-50">+1 дн</button>
-                  <button onClick={() => ban(u)} className="rounded-lg bg-white/5 px-2.5 py-1.5 text-xs font-bold text-slate-300 hover:bg-red-500/20 hover:text-red-200">
-                    {u.banned ? 'Разбанить' : 'Бан'}
-                  </button>
-                  {!u.deletedAt && (
-                    <button disabled={busyUid === u.uid} onClick={() => removeUser(u)} title="Удалить аккаунт и все данные" className="rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-bold text-red-200 hover:bg-red-500/30 disabled:opacity-50">
-                      <Trash2 size={13} /> Удалить
-                    </button>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {u.deletedAt ? (
+                    <span className="px-2 py-1 text-[11px] text-slate-500">—</span>
+                  ) : (
+                    <>
+                      <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1)} className="whitespace-nowrap rounded-md bg-red-500/15 px-2 py-1 text-[11px] font-bold text-red-200 disabled:opacity-50">−1 мес</button>
+                      <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1)} className="whitespace-nowrap rounded-md bg-emerald-500/15 px-2 py-1 text-[11px] font-bold text-emerald-200 disabled:opacity-50">+1 мес</button>
+                      <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1, 'week')} className="whitespace-nowrap rounded-md bg-red-500/15 px-2 py-1 text-[11px] font-bold text-red-200 disabled:opacity-50">−1 нед</button>
+                      <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1, 'week')} className="whitespace-nowrap rounded-md bg-emerald-500/15 px-2 py-1 text-[11px] font-bold text-emerald-200 disabled:opacity-50">+1 нед</button>
+                      <button disabled={busyUid === u.uid} onClick={() => adjust(u, -1, 'day')} className="whitespace-nowrap rounded-md bg-red-500/15 px-2 py-1 text-[11px] font-bold text-red-200 disabled:opacity-50">−1 дн</button>
+                      <button disabled={busyUid === u.uid} onClick={() => adjust(u, 1, 'day')} className="whitespace-nowrap rounded-md bg-emerald-500/15 px-2 py-1 text-[11px] font-bold text-emerald-200 disabled:opacity-50">+1 дн</button>
+                      <button onClick={() => ban(u)} className="whitespace-nowrap rounded-md bg-white/5 px-2 py-1 text-[11px] font-bold text-slate-300 hover:bg-red-500/20 hover:text-red-200">
+                        {u.banned ? 'Разбанить' : 'Бан'}
+                      </button>
+                      <button disabled={busyUid === u.uid} onClick={() => removeUser(u)} title="Удалить аккаунт и все данные" className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-red-500/15 px-2 py-1 text-[11px] font-bold text-red-200 hover:bg-red-500/30 disabled:opacity-50">
+                        <Trash2 size={12} /> Удалить
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -710,7 +714,7 @@ function UserDetails({ det }) {
 }
 
 function StatusPill({ st }) {
-  if (st.status === 'pro') return <span className="rounded-md bg-amber-400/15 px-2 py-0.5 text-xs font-bold text-amber-200">PRO · {st.daysLeft} дн.</span>
-  if (st.status === 'trial') return <span className="rounded-md bg-mint/15 px-2 py-0.5 text-xs font-bold text-mint-soft">Триал · {st.daysLeft} дн.</span>
-  return <span className="rounded-md bg-red-500/15 px-2 py-0.5 text-xs font-bold text-red-300">Истёк</span>
+  if (st.status === 'pro') return <span className="whitespace-nowrap rounded-md bg-amber-400/15 px-2 py-0.5 text-xs font-bold text-amber-200">PRO · {st.daysLeft} дн.</span>
+  if (st.status === 'trial') return <span className="whitespace-nowrap rounded-md bg-mint/15 px-2 py-0.5 text-xs font-bold text-mint-soft">Триал · {st.daysLeft} дн.</span>
+  return <span className="whitespace-nowrap rounded-md bg-red-500/15 px-2 py-0.5 text-xs font-bold text-red-300">Истёк</span>
 }
