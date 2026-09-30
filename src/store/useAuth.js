@@ -13,6 +13,7 @@ import { auth } from '../utils/firebase.js'
 import { getPlan } from '../utils/billing.js'
 import { ensureUserDoc, saveSubToCloud, resolveRefCode, createReferral, markReferralPaid, reserveTxHash } from '../utils/users.js'
 import { consumeRefParam, peekRefParam } from '../utils/referral.js'
+import { trackVisit } from '../utils/visits.js'
 import { useStore } from './useStore.js'
 
 // Real Firebase Authentication (email/password).
@@ -110,6 +111,7 @@ export const useAuth = create(
           }
           useStore.getState().bindUser(user.id)
           syncCloud(user, get, set)
+          trackVisit(user)
         })
       },
 

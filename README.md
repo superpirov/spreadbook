@@ -55,6 +55,12 @@ npm run deploy
 - Дни забираются кнопкой (пишет свой документ + `bonusType:'days'`); деньги — заявкой с кошельком (`bonusType:'cash'`, `cashStatus: pending→paid`), владелец платит вручную со своего кошелька и отмечает в админке (раздел «Выплаты рефералам»).
 - Страница `/app/referrals`: ссылка-копия, счётчики, список, кнопки клейма. Правила — в блоке rules выше (админ видит все referrals для выплат).
 
+## Посещаемость
+
+Без бэкенда: `visits/{YYYY-MM-DD}_{visitorId}` — один документ на посетителя в день (вошедшие — по uid, гости — по анонимному id). Повторный заход обновляет `lastSeen`, день считается один раз.
+- Трекер `trackVisit()` в `main.jsx` + при входе (`useAuth`), троттлится localStorage-флагом, никогда не ломает приложение.
+- Админка: уникальные + визиты за день/7 дней/месяц/год + график 14 дней. Правила — в блоке rules выше (писать могут все с валидной формой, читать только админ).
+
 ## Оплата (BILLING)
 
 Модель: 3 дня триала с момента первого входа, далее PRO — 19 USDT / 30 дней или 132 USDT / 365 дней (≈11 USDT/мес).
@@ -100,6 +106,18 @@ service cloud.firestore {
     match /reports/{reportId} {
       allow read, create: if request.auth != null;
       allow update, delete: if request.auth != null && request.auth.token.email == 'pirov.ru@yandex.ru';
+    }
+    // Visitor stats: anyone (even guests) can log a visit with validated shape,
+    // only admin reads. One doc per visitor per day.
+    match /visits/{visitId} {
+      allow read: if request.auth != null && request.auth.token.email == 'pirov.ru@yandex.ru';
+      allow create, update: if visitId.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}_.{1,120}$')
+        && request.resource.data.keys().hasOnly(['date', 'visitorId', 'email', 'lastSeen'])
+        && request.resource.data.date is string
+        && request.resource.data.visitorId is string
+        && request.resource.data.lastSeen is string
+        && (request.resource.data.email is string || request.resource.data.email == null);
+      allow delete: if false;
     }
     // Used payment hashes: first claimant wins (!exists), admin can clean up.
     match /payments/{txHash} {

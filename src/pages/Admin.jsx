@@ -4,6 +4,7 @@ import { ShieldAlert, Minus, Plus, ExternalLink, RefreshCw, Flag, Check, X, Tras
 import { useAuth } from '../store/useAuth.js'
 import { isAdmin } from '../utils/admin.js'
 import { fetchAllUsers, adjustMonths, adjustDays, setBanned, fetchUserDeals, fetchReports, moderateReport, deleteReport, fetchCashPayouts, markPayoutPaid } from '../utils/users.js'
+import { dayKey, fetchVisitStats, fetchDailyVisits } from '../utils/visits.js'
 import { getAccessState, tronscanUrl } from '../utils/billing.js'
 import { dealFiatTotal } from '../utils/calculations.js'
 import { formatDate, formatDateTime, formatMoney } from '../utils/formatters.js'
@@ -24,6 +25,33 @@ export default function Admin() {
   const [payoutsError, setPayoutsError] = useState('')
   const [expanded, setExpanded] = useState(null) // uid with open details
   const [details, setDetails] = useState({}) // { [uid]: { loading, day, week, month, last } }
+  const [visits, setVisits] = useState(null) // { day, week, month, year }
+  const [daily, setDaily] = useState([])
+  const [visitsError, setVisitsError] = useState('')
+
+  const loadVisits = useCallback(async () => {
+    try {
+      const now = new Date()
+      const today = dayKey(now)
+      const weekAgo = new Date(now)
+      weekAgo.setDate(now.getDate() - 6)
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+      const yearStart = new Date(now.getFullYear(), 0, 1)
+      const [d, w, m, y, bars] = await Promise.all([
+        fetchVisitStats(today, today),
+        fetchVisitStats(dayKey(weekAgo), today),
+        fetchVisitStats(dayKey(monthStart), today),
+        fetchVisitStats(dayKey(yearStart), today),
+        fetchDailyVisits(14),
+      ])
+      setVisits({ day: d, week: w, month: m, year: y })
+      setDaily(bars)
+      setVisitsError('')
+    } catch (e) {
+      console.error('[admin] visits failed:', e)
+      setVisitsError(`Посещаемость не загрузилась (${e?.code || 'ошибка'}) — проверьте rules для коллекции visits.`)
+    }
+  }, [])
 
   const loadPayouts = useCallback(async () => {
     try {
@@ -59,10 +87,11 @@ export default function Admin() {
   useEffect(() => {
     if (isAdmin(user)) {
       load()
-      loadReports()
+      loadReports('pending')
       loadPayouts()
+      loadVisits()
     } else setLoading(false)
-  }, [user, load, loadReports, loadPayouts])
+  }, [user, load, loadReports, loadPayouts, loadVisits])
 
   const payOut = async (id) => {
     if (!window.confirm('Отметить выплату как совершённую? Деньги уже должны быть отправлены на кошелёк.')) return
@@ -241,6 +270,49 @@ export default function Admin() {
       </div>
 
       {error && <p className="rounded-xl bg-red-500/15 px-4 py-3 text-sm text-red-200">{error}</p>}
+
+      <div className="card p-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold">Посещаемость · уникальные за день</h3>
+          <button onClick={loadVisits} className="btn-ghost px-3 py-1.5 text-xs">
+            <RefreshCw size={13} /> Обновить
+          </button>
+        </div>
+        {visitsError && <p className="mt-2 text-xs text-red-300">{visitsError}</p>}
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {[
+            ['Сегодня', visits?.day],
+            ['7 дней', visits?.week],
+            ['Месяц', visits?.month],
+            ['Год', visits?.year],
+          ].map(([t, v]) => (
+            <div key={t} className="rounded-xl bg-white/[0.04] p-3 text-center">
+              <div className="text-xl font-extrabold">{v ? v.uniques : '…'}</div>
+              <div className="text-xs text-slate-400">{t}</div>
+              <div className="text-[11px] text-slate-500">{v ? `визитов: ${v.visits}` : ''}</div>
+            </div>
+          ))}
+        </div>
+        {daily.length > 0 && (
+          <div className="mt-3">
+            <div className="flex h-24 items-end gap-1">
+              {daily.map((d) => {
+                const max = Math.max(1, ...daily.map((x) => x.visits))
+                return (
+                  <div key={d.date} className="flex min-w-0 flex-1 flex-col items-center gap-1" title={`${d.label}: визитов ${d.visits}, уникальных ${d.uniques}`}>
+                    <div
+                      className="w-full rounded-t bg-gradient-to-t from-brand/70 to-brand-soft"
+                      style={{ height: `${Math.max(4, (d.visits / max) * 88)}px`, opacity: d.visits ? 1 : 0.25 }}
+                    />
+                    <span className="text-[9px] text-slate-500">{d.label.slice(0, 2)}</span>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="mt-1 text-[11px] text-slate-500">Визиты за 14 дней (повторный заход в тот же день не считается).</p>
+          </div>
+        )}
+      </div>
 
       <div className="card overflow-hidden">
         <div className="border-b border-white/10 p-3">
