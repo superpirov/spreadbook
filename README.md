@@ -80,6 +80,8 @@ npm run deploy
 - `users/{uid}/contacts/{urlencoded-name}` — рейтинг, заметка и реквизиты,
 - `users/{uid}` — `knownCounterparties[]`, `period` + профиль/подписка.
 
+Удаление пользователя (`deleteUserAccount`): стирает подколлекции `deals`/`contacts`/`amlchecks` батчами и оставляет tombstone (`banned: true`, `deletedAt`) — сиротский Auth-логин не сможет тихо начать новый триал, пользователь видит «Аккаунт удалён». Удалённые не считаются в статистике и помечены УДАЛЁН. Важно: сам логин Firebase Auth из клиентского кода удалить нельзя — повторная регистрация с той же почтой требует удалить пользователя в Firebase Console → Authentication. Свой аккаунт админа удалить нельзя (защита в UI).
+
 Правила (Rules → Publish, email владельца уже подставлен):
 
 ```

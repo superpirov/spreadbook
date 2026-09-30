@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { ShieldAlert, Minus, Plus, ExternalLink, RefreshCw, Flag, Check, X, Trash2, Search, Banknote, Ban, ChevronDown, FileSpreadsheet, Stethoscope } from 'lucide-react'
 import { useAuth } from '../store/useAuth.js'
 import { isAdmin } from '../utils/admin.js'
-import { fetchUsersPage, adjustMonths, adjustDays, setBanned, fetchUserDeals, fetchReports, moderateReport, deleteReport, fetchCashPayouts, markPayoutPaid, diag } from '../utils/users.js'
+import { fetchUsersPage, adjustMonths, adjustDays, setBanned, deleteUserAccount, fetchUserDeals, fetchReports, moderateReport, deleteReport, fetchCashPayouts, markPayoutPaid, diag } from '../utils/users.js'
 import { dayKey, fetchVisitStats, fetchDailyVisits, diag as diagVisits } from '../utils/visits.js'
 import { getAccessState, tronscanUrl } from '../utils/billing.js'
 import { dealFiatTotal } from '../utils/calculations.js'
@@ -235,6 +235,29 @@ export default function Admin() {
     }
   }
 
+  const removeUser = async (u) => {
+    if (u.uid === user.id) {
+      setError('Нельзя удалить собственный аккаунт администратора.')
+      return
+    }
+    const label = u.email || u.name || u.uid
+    if (!window.confirm(`Удалить пользователя ${label}?\n\nБудет безвозвратно стёрто: сделки, контрагенты, история AML, подписка. Пользователь увидит экран «Аккаунт удалён» и должен будет зарегистрироваться заново.`)) return
+    if (!window.confirm(`Подтвердите удаление ${label}. Это действие необратимо.`)) return
+    setBusyUid(u.uid)
+    try {
+      await deleteUserAccount(u.uid)
+      setUsers((list) => list.map((x) => (x.uid === u.uid
+        ? { ...x, banned: true, deletedAt: new Date().toISOString(), plan: 'trial', planId: null, expiresAt: null, txHash: null }
+        : x)))
+      if (expanded === u.uid) setExpanded(null)
+    } catch (e) {
+      console.error('[admin] delete failed:', e)
+      setError(`Не удалось удалить пользователя (${diag(e)}). Проверьте rules Firestore.`)
+    } finally {
+      setBusyUid(null)
+    }
+  }
+
   const toggleDetails = async (u) => {
     if (expanded === u.uid) {
       setExpanded(null)
@@ -272,10 +295,10 @@ export default function Admin() {
   }
 
   const stats = {
-    total: users.length,
-    pro: users.filter((u) => accessOf(u).status === 'pro').length,
-    trial: users.filter((u) => accessOf(u).status === 'trial').length,
-    expired: users.filter((u) => accessOf(u).status === 'expired').length,
+    total: users.filter((u) => !u.deletedAt).length,
+    pro: users.filter((u) => !u.deletedAt && accessOf(u).status === 'pro').length,
+    trial: users.filter((u) => !u.deletedAt && accessOf(u).status === 'trial').length,
+    expired: users.filter((u) => !u.deletedAt && accessOf(u).status === 'expired').length,
   }
 
   const needle = query.trim().toLowerCase()
@@ -437,13 +460,16 @@ export default function Admin() {
                           <ChevronDown size={14} className={expanded === u.uid ? 'rotate-180 transition' : 'transition'} />
                         </button>
                         <div className="font-semibold">{u.name || '—'}</div>
-                        {u.banned && <span className="rounded bg-red-500/20 px-1.5 py-px text-[10px] font-bold text-red-200">БАН</span>}
+                        {u.banned && !u.deletedAt && <span className="rounded bg-red-500/20 px-1.5 py-px text-[10px] font-bold text-red-200">БАН</span>}
+                        {u.deletedAt && <span className="rounded bg-red-500/30 px-1.5 py-px text-[10px] font-bold text-red-100">УДАЛЁН</span>}
                       </div>
                       <div className="text-xs text-slate-400">{u.email}</div>
                       <div className="text-[11px] text-slate-500">рег. {u.createdAt ? formatDate(u.createdAt) : '—'}</div>
                     </td>
                     <td className="px-4 py-2.5">
-                      <StatusPill st={st} />
+                      {u.deletedAt
+                        ? <span className="rounded-lg bg-red-500/15 px-2 py-1 text-xs font-bold text-red-200">Удалён</span>
+                        : <StatusPill st={st} />}
                       {st.status === 'trial' && <div className="mt-0.5 text-[11px] text-slate-500">триал с {u.trialStart ? formatDate(u.trialStart) : '—'}</div>}
                       {u.planId && <div className="mt-0.5 text-[11px] text-slate-500">тариф: {u.planId}</div>}
                     </td>
@@ -476,8 +502,13 @@ export default function Admin() {
                           +1 дн
                         </button>
                         <button onClick={() => ban(u)} title={u.banned ? 'Разблокировать' : 'Заблокировать'} className={`rounded-lg px-2.5 py-1.5 text-xs font-bold ${u.banned ? 'bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25' : 'bg-white/5 text-slate-300 hover:bg-red-500/20 hover:text-red-200'}`}>
-                          {u.banned ? 'Разбанить' : 'Бан'}
+                           {u.banned ? 'Разбанить' : 'Бан'}
                         </button>
+                        {!u.deletedAt && (
+                          <button disabled={busyUid === u.uid} onClick={() => removeUser(u)} title="Удалить аккаунт и все данные" className="rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-bold text-red-200 hover:bg-red-500/30 disabled:opacity-50">
+                            <Trash2 size={13} /> Удалить
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -513,11 +544,14 @@ export default function Admin() {
                         <ChevronDown size={14} className={expanded === u.uid ? 'rotate-180 transition' : 'transition'} />
                       </button>
                       <span className="truncate font-semibold">{u.name || u.email}</span>
-                      {u.banned && <span className="rounded bg-red-500/20 px-1.5 py-px text-[10px] font-bold text-red-200">БАН</span>}
+                      {u.banned && !u.deletedAt && <span className="rounded bg-red-500/20 px-1.5 py-px text-[10px] font-bold text-red-200">БАН</span>}
+                      {u.deletedAt && <span className="rounded bg-red-500/30 px-1.5 py-px text-[10px] font-bold text-red-100">УДАЛЁН</span>}
                     </div>
                     <div className="truncate text-xs text-slate-400">{u.email}</div>
                   </div>
-                  <StatusPill st={st} />
+                  {u.deletedAt
+                    ? <span className="rounded-lg bg-red-500/15 px-2 py-1 text-xs font-bold text-red-200">Удалён</span>
+                    : <StatusPill st={st} />}
                 </div>
                 <div className="mt-1 text-xs text-slate-400">До: {u.expiresAt ? formatDateTime(u.expiresAt) : '—'}</div>
                 {expanded === u.uid && (
@@ -535,6 +569,11 @@ export default function Admin() {
                   <button onClick={() => ban(u)} className="rounded-lg bg-white/5 px-2.5 py-1.5 text-xs font-bold text-slate-300 hover:bg-red-500/20 hover:text-red-200">
                     {u.banned ? 'Разбанить' : 'Бан'}
                   </button>
+                  {!u.deletedAt && (
+                    <button disabled={busyUid === u.uid} onClick={() => removeUser(u)} title="Удалить аккаунт и все данные" className="rounded-lg bg-red-500/15 px-2.5 py-1.5 text-xs font-bold text-red-200 hover:bg-red-500/30 disabled:opacity-50">
+                      <Trash2 size={13} /> Удалить
+                    </button>
+                  )}
                 </div>
               </div>
             )
@@ -550,6 +589,7 @@ export default function Admin() {
       </div>
       <p className="text-[11px] text-slate-500">
         Добавление месяцев продлевает PRO от max(сейчас, текущий срок). Убавление сдвигает срок назад. Изменения применяются у пользователя при следующем входе/обновлении (подписка подтягивается из облака).
+        Удаление стирает сделки, контрагентов, историю AML и подписку; пользователь видит «Аккаунт удалён». Повторная регистрация с той же почтой требует дополнительно удалить логин в Firebase Console → Authentication.
       </p>
 
       <div className="card overflow-hidden">

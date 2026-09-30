@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, query, where, limit, orderBy, startAfter, serverTimestamp } from 'firebase/firestore'
+import { doc, getDoc, setDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, query, where, limit, orderBy, startAfter, writeBatch, serverTimestamp } from 'firebase/firestore'
 import { db } from './firebase.js'
 import { makeRefCode } from './referral.js'
 
@@ -110,6 +110,50 @@ export async function setPlanPro(uid, expiresAt, note = '') {
 // (takes effect on their next login/refresh).
 export async function setBanned(uid, banned) {
   await updateDoc(userDoc(uid), { banned: !!banned, updatedAt: serverTimestamp() })
+}
+
+// Full account deletion by admin: wipes deals/contacts/amlchecks and leaves
+// a tombstone (banned + deletedAt) so the orphaned Auth account can't
+// silently start a fresh trial — the user sees "account deleted" and must
+// register anew. NOTE: the Firebase Auth login itself can only be removed in
+// Firebase Console → Authentication (client SDK has no such API), so
+// re-registration with the SAME email additionally requires deleting the
+// Auth user there.
+export async function deleteUserAccount(uid) {
+  const prev = await getDoc(userDoc(uid))
+  const prevData = prev.exists() ? prev.data() : {}
+  for (const sub of ['deals', 'contacts', 'amlchecks']) {
+    for (;;) {
+      const snap = await getDocs(query(collection(db, 'users', uid, sub), limit(400)))
+      if (snap.empty) break
+      for (let i = 0; i < snap.docs.length; i += 400) {
+        const batch = writeBatch(db)
+        snap.docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref))
+        await batch.commit()
+      }
+      if (snap.docs.length < 400) break
+    }
+  }
+  await setDoc(userDoc(uid), {
+    email: prevData.email || null,
+    name: prevData.name || null,
+    createdAt: prevData.createdAt || null,
+    plan: 'trial',
+    planId: null,
+    trialStart: null,
+    txHash: null,
+    paidAt: null,
+    expiresAt: null,
+    knownCounterparties: [],
+    period: 'all',
+    templates: [],
+    blacklist: [],
+    goalAmount: 0,
+    watchlist: [],
+    banned: true,
+    deletedAt: new Date().toISOString(),
+    updatedAt: serverTimestamp(),
+  })
 }
 
 // Admin inspection: full deal list of any user (rules allow admin reads).

@@ -25,6 +25,7 @@ function CabinetLayout() {
   const cloudError = useStore((s) => s.cloudError)
   const cloudReady = useStore((s) => s.cloudReady)
   const banned = useStore((s) => s.banned)
+  const accountDeleted = useStore((s) => s.accountDeleted)
   const logout = useAuth((s) => s.logout)
   const nav = useNavigate()
   const loc = useLocation()
@@ -37,9 +38,11 @@ function CabinetLayout() {
           <span className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-red-500/15 text-red-300">
             <Ban size={22} />
           </span>
-          <h1 className="mt-3 text-xl font-extrabold">Аккаунт заблокирован</h1>
+          <h1 className="mt-3 text-xl font-extrabold">{accountDeleted ? 'Аккаунт удалён' : 'Аккаунт заблокирован'}</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Доступ ограничен администратором. Если это ошибка — напишите в поддержку.
+            {accountDeleted
+              ? 'Администратор удалил ваш аккаунт и все данные. Для повторной регистрации обратитесь в поддержку.'
+              : 'Доступ ограничен администратором. Если это ошибка — напишите в поддержку.'}
           </p>
           <div className="mt-4 flex justify-center gap-2">
             <a href="https://t.me/ruslanpirov" target="_blank" rel="noreferrer" className="btn-ghost">Поддержка</a>
